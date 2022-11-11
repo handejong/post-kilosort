@@ -45,7 +45,7 @@ you will now have a self-containing dataset on disk, which might be more
 managable than the raw datset.
 
 Created: Fri Nov  4 12:34:37 2022
-Last Updated:
+Last Updated: Nov 11 14:01:20 2022
 
 @author: Han de Jong
 """
@@ -449,7 +449,7 @@ class pks_dataset:
         
         # load all tsv files first
         files = ['cluster_Amplitude.tsv', 'cluster_ContamPct.tsv', \
-                 'cluster_KSLabel.tsv', 'cluster_group.tsv']
+                  'cluster_group.tsv']
         clusters = [self._load_tsv(self.path + file) for file in files]
         self.clusters = pd.concat(clusters, axis=1)
                    
@@ -482,6 +482,9 @@ class pks_dataset:
         self.params[offset] = offset
         self.params['sample_rate'] = sample_rate
         self.params['hp_filtered'] = hp_filtered
+
+        # Finally, load the similarity matrix
+        self.similarity_matrix = np.load(self.path + 'similar_templates.npy')
 
         
     def _check_folder(self):

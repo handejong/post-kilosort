@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """
 
-Let's look at the solar position
 
+Last Updated: Nov 11 14:01:20 2022
 
 @autor: Han de Jong
 """

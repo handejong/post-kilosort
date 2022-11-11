@@ -35,7 +35,7 @@ Run them by calling:
     >> function(self, list_of_units)
 
 Created: Fri Nov  4 12:21:50 2022
-Last Updated: 
+Last Updated: Nov 11 14:01:20 2022
 
 @author: Han de Jong
 """
@@ -46,7 +46,6 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 import seaborn as sns
 import pks_attribute_functions as atf
-from pks_inspector import inspect_object
 
 
 class pks_plotting:
@@ -160,18 +159,6 @@ class pks_plotting:
                 raise Exception('Not a valid attribute function see help(custom_plot) for help.')
 
         raise Exception('Not a valid plot type, see help(custom_plot) for help.')
-
-    
-    def inspect(self, units, channels):
-        
-       
-        # Correlograms
-        #self.correlogram(units)
-        
-        # Print overview
-        #print(self.data.clusters.loc[units, :])
-        
-        return inspect_object(self, units, channels)
         
         
     def ISI(self, unit):

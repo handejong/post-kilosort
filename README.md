@@ -1,4 +1,4 @@
-# post-kilosort
+# post-kilosort (PKS)
 Python-based toolkit to import and analyze Neuropixels probes data that was previously processed using Kilosort 3.0. It is an alternative to Phy. In contrast to Phy it does not have a convenient GUI, instead it is  purely Matplotlib and command-line based. It is however very light-weight and highly customizable. 
 
 
@@ -99,9 +99,10 @@ cut = data.sort.delete_unit # Again, binding the function itself, not its output
 cut(22) # Will now delete unit 22 from the data.
 ```
 
-### Future plans
+#
+ Future plans
 
-1. PKS currently works on the file "temp_wh.mat" which is the whitened signal build build by Kilosort. Soon you will also be able to load raw unfiltered (both spikeGLX and OpenEphys).
+1. PKS currently works on the file "temp_wh.mat" which is the whitened signal constructed by Kilosort. Soon you will also be able to load raw unfiltered (both spikeGLX and OpenEphys).
 
 2. To include a method to remove light artifacts, which are prevalent in opto-tagging experiments.
 

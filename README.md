@@ -75,7 +75,7 @@ data.plot.ISI(2) # Will plot the ISI of unit 2 (a unit must be specified)
 ## Sorting Workflow
 
 1. Make the plots you want. I like waveform, amplitude-in-time and the PCA plot, but there are a lot of possibilities.
-2. Have look at the cells PKS think you should sort (data.sort.todo()). Have close look at 'spikeCount' to see if it is worth it to look at them and 'Amplitude' and 'MainChannel' to get an idea if this units are well-isolated. NOTE: in contrast to Phy, PKS, does not use "similarity", although you can have a look 
+2. Have look at the cells PKS think you should sort (data.sort.todo()). Have close look at 'spikeCount', 'Amplitude' to see if it is worth your time to clean the unit.
 3. Use add_unit, remove_unit and change_channel to get a sense for the units you are looking at. (PKS currently does not use "template-similarity", however, you can look at the similarity matrix in self.similarity_matrix and get any template using the method data.get_template(unit).)
 4. Use the sort methods to manipulate the dataset. **NOTE: these manipulations are automatically saved (see above)**
 
@@ -93,7 +93,7 @@ Plots are automatically updated following sorting manipulations. There should no
 Hint: If you find yourself repeating similar methods over and over, just bind them to something convenient in your workspace:
 ```python
 todo = data.sort.todo # Note binding the function itself, not its output
-todo() # Will no print the todo list.
+todo() # Will now print the todo list.
 
 cut = data.sort.delete_unit # Again, binding the function itself, not its output
 cut(22) # Will now delete unit 22 from the data.

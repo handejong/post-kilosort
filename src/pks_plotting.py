@@ -46,6 +46,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 import seaborn as sns
 import pks_attribute_functions as atf
+from mpl_toolkits import mplot3d
 
 
 class pks_plotting:
@@ -145,6 +146,9 @@ class pks_plotting:
 
 
     def custom_plot(self, units, channels, type='time_plot', attribute_function=None):
+        """
+        Write an explanation about cutom_plots and attribute functions.
+        """
 
         if type == 'time_plot':
             try:
@@ -157,6 +161,8 @@ class pks_plotting:
                 return attribute_plot(self, units, channels, attribute_function)
             except:
                 raise Exception('Not a valid attribute function see help(custom_plot) for help.')
+
+        # TODO include 3D plot
 
         raise Exception('Not a valid plot type, see help(custom_plot) for help.')
         
@@ -225,6 +231,24 @@ class pks_plotting:
         # Finaly formatting
         plt.suptitle('Correlogram')
 
+
+    def plot_3D(self, units=None, channels=None, 
+        attribute_function=atf._calc_amplitude):
+        """
+        NOTE DONE
+        """
+
+         # Infer units if necesary
+        units, channels = self.data._infer_unit_channels(units, channels)
+
+        # Check that channels is 3
+        if len(channels)>3:
+            channels = channels[:3]
+            print(f'Using only channels: {channels} for 3D plot.')
+
+
+        return plot_3D(self, units, channels, attribute_function)
+
                 
     def add_unit(self, unit):
 
@@ -236,6 +260,16 @@ class pks_plotting:
 
         # Remove the unit from each plot
         _ = [i.remove_unit(unit) for i in self.data.linked_plots]
+
+    def roll(self, n=1):
+        """
+        Move up one channel for all plots
+
+        """
+
+        # Grab channels
+        _ = [i.roll(n) for i in self.data.linked_plots]
+
 
 
     def change_channel(self, index, new_channel):
@@ -380,57 +414,75 @@ class plot_object:
         pass
 
  
-    def add_unit(self, unit):
+    def add_unit(self, units):
         """
-        Responsible for adding a unit to every axes in the plot.
+        Responsible for adding one or more units to every axes in the plot.
+        It sould:
+            - Draw the unit on every axes
+            - Include the unit in the object (self.units.append)
 
         """
 
-        # Check if unit is not allready in there
-        if unit in self.units:
-            return None
+        # Multiple units or just 1?
+        if not (units.__class__ == list) | (units.__class__ == tuple):
+            units = [units]
+
+        for unit in units:
+
+            # Check if unit is not allready in there
+            if unit in self.units:
+                return None
+            
+            # Grab spikes
+            spikes = self.data.get_unit_spikes(unit)
+            
+            # Figure out color
+            color = self._get_color()
+            self.colors.append(color)
+            
+            # Draw every channel
+            for i, channel in enumerate(self.channels):
+                    data = self._get_plot_data(spikes, channel)
+                    self._add_unit_to_axes(data, i, color)
         
-        # Grab spikes
-        spikes = self.data.get_unit_spikes(unit)
-        
-        # Figure out color
-        color = self._get_color()
-        self.colors.append(color)
-        
-        # Draw every channel
-        for i, channel in enumerate(self.channels):
-                data = self._get_plot_data(spikes, channel)
-                self._add_unit_to_axes(data, i, color)
-    
-        # Add the unit
-        self.units.append(unit)                
+            # Add the unit
+            self.units.append(unit)                
             
         # Add (update) the legend
         self._add_legend()
    
   
-    def remove_unit(self, unit):
-        # Check if unit in there
-        if unit not in self.units:
-            return None 
-        
-        # Get index of unit
-        index = self.units.index(unit)
-        
-        # Remove the units
-        self.units.pop(index)
-        self.colors.pop(index)
-        
-        # Remove the plots
-        for i, channel in enumerate(self.channels):
-            
-            # Remove the unit
-            self._remove_unit_from_axes(index, i)
+    def remove_unit(self, units):
+        """
+        Responsible for removing one or more units from all linked
+        axes.
+        """
 
-            # Also remove the handles
-            temp = self.plot_handles[i].pop(index)
+        # Multiple units or just 1?
+        if not (units.__class__ == list) | (units.__class__ == tuple):
+            units = [units]
+
+        for unit in units:
+            # Check if unit in there
+            if unit not in self.units:
+                return None 
             
- 
+            # Get index of unit
+            index = self.units.index(unit)
+            
+            # Remove the units
+            self.units.pop(index)
+            self.colors.pop(index)
+            
+            # Remove the plots
+            for i, channel in enumerate(self.channels):
+                
+                # Remove the unit
+                self._remove_unit_from_axes(index, i)
+
+                # Also remove the handles
+                temp = self.plot_handles[i].pop(index)
+                
         # Update the legend
         self._add_legend()
         
@@ -453,6 +505,17 @@ class plot_object:
         # Set the axes labels
         self._label_plot(index)
 
+    def roll(self, n=1):
+        """
+        Will move every plot 'n' channels up.
+        """
+
+        channels = self.channels[n:]
+        for i in range(n):
+            channels.append(channels[-1]+1)
+
+        for i, channel in enumerate(channels):
+            self.change_channel(i, channel)
     
     def show_only(self, units):
         """
@@ -515,7 +578,8 @@ class plot_object:
 
     def _remove_unit_from_axes(self, index, axes_X, axes_Y=None):
         """
-        
+        Removes a unit from the axes. Axes_X and Axes_Y ares used for
+        attribute (scatter) plots. Time plots use only axes_X.
 
         """
 
@@ -607,7 +671,120 @@ class plot_object:
         
         self.event = event
         
+
+class plot_3D(plot_object):
+
+    def startup(self):
+
+        # There will be only one plot handle (for now)
+        self.plot_handles = {0:[]}
+
+    def make_figure(self):
+
+        # TODO allow for multiple axes
+        fig = plt.figure(tight_layout=True)
+        ax = plt.axes(projection='3d')
+
+        # Label axes
+        ax.set_xlabel(f'Channel: {self.channels[0]}')
+        ax.set_ylabel(f'Channel: {self.channels[1]}')  
+        ax.set_zlabel(f'Channel: {self.channels[2]}')  
+
+        # Store the axes
+        self.axs = np.array([ax])
+
+        return fig
+
+    def add_unit(self, units):
+        """
+        Responsible for adding a unit to a 3D plot
+        """
+
+        # Multiple units or just 1?
+        if not (units.__class__ == list) | (units.__class__ == tuple):
+            units = [units]
+
+        for unit in units:
+
+            # Check if unit is not allready in there
+            if unit in self.units:
+                return None
+            
+            # Grab spikes
+            spikes = self.data.get_unit_spikes(unit)
+            
+            # Figure out color
+            color = self._get_color()
+            self.colors.append(color)
+            
+            # Get the data and plot
+            x = self._get_plot_data(spikes, self.channels[0])
+            y = self._get_plot_data(spikes, self.channels[1])
+            z = self._get_plot_data(spikes, self.channels[2])
+            self._add_unit_to_axes(x, y, z, color)
         
+            # Add the unit
+            self.units.append(unit)                
+            
+        # Add (update) the legend
+        self._add_legend()
+
+    def remove_unit(self, units):
+        """
+        Responsible for removing one or more units from all linked
+        axes.
+        """
+
+        # Multiple units or just 1?
+        if not (units.__class__ == list) | (units.__class__ == tuple):
+            units = [units]
+
+        for unit in units:
+            # Check if unit in there
+            if unit not in self.units:
+                return None 
+            
+            # Get index of unit
+            index = self.units.index(unit)
+            
+            # Remove the units
+            self.units.pop(index)
+            self.colors.pop(index)
+            
+            # Remove the plots
+            #for i, channel in enumerate(self.channels):
+            # TODO replace this line with something to go over all axes
+                
+            # Remove the unit
+            self._remove_unit_from_axes(index, 0)
+
+            # Also remove the handles
+            temp = self.plot_handles[0].pop(index)
+                
+        # Update the legend
+        self._add_legend()
+
+
+    def _get_plot_data(self, spikes, channel):
+
+        # Make the data
+        temp = self.data.get_waveform(spikes, channel, average=False, 
+            sample=self.plotter.plot_max)
+
+        return self.attribute_function(temp, channel)
+
+
+    def _add_unit_to_axes(self, x, y, z, color):
+        """
+        Ads the units to the axes
+        """
+
+        handle = self.axs[0].scatter3D(x, y, z, color=color,
+            s=10, marker = '.', alpha=0.8)
+
+        self.plot_handles[0].append(handle)
+
+    
 
 class attribute_plot(plot_object):
     
@@ -626,6 +803,14 @@ class attribute_plot(plot_object):
         n_channels = len(self.channels)
         fig, axs = plt.subplots(figsize=[10, 10], nrows=n_channels, 
                                 ncols=n_channels, tight_layout=True)
+
+        # Share X and Y, but not on the diagonal
+        for x in range(n_channels):
+            for y in range(n_channels):
+                if x==y:
+                    continue
+                axs[x, y].sharex(axs[0, 1])
+                axs[x, y].sharey(axs[0, 1])
  
         # Formatting
         for i, ax in enumerate(axs[0, :]):
@@ -643,32 +828,37 @@ class attribute_plot(plot_object):
         return fig
 
         
-    def add_unit(self, unit):
+    def add_unit(self, units):
         
-        # Check if unit is not allready in there
-        if unit in self.units:
-            return None
-        
-        # Figure out color
-        color = self._get_color()
-        self.colors.append(color)
+        # Multiple units or just 1?
+        if not (units.__class__ == list) | (units.__class__ == tuple):
+            units = [units]
 
-        # Make data_X
-        spikes = self.data.get_unit_spikes(unit)
-        data = [self._get_plot_data(spikes, channel) for channel in self.channels]
-        
-        # Draw every channel
-        for X, chan_X in enumerate(self.channels):
-            for Y, chan_Y in enumerate(self.channels):
+        for unit in units:
+            # Check if unit is not allready in there
+            if unit in self.units:
+                return None
+            
+            # Figure out color
+            color = self._get_color()
+            self.colors.append(color)
+
+            # Make data_X
+            spikes = self.data.get_unit_spikes(unit)
+            data = [self._get_plot_data(spikes, channel) for channel in self.channels]
+            
+            # Draw every channel
+            for X, chan_X in enumerate(self.channels):
+                for Y, chan_Y in enumerate(self.channels):
+                    
+                    # Plot X and Y data on the corrext axes and store the handle
+                    self._add_unit_to_axes(data[X], data[Y], X, Y, color)
                 
-                # Plot X and Y data on the corrext axes and store the handle
-                self._add_unit_to_axes(data[X], data[Y], X, Y, color)
-            
-        # Add the unit
-        self.units.append(unit)                
-            
-        # Add a legend
-        self._add_legend()
+            # Add the unit
+            self.units.append(unit)                
+                
+            # Add a legend
+            self._add_legend()
 
 
     def remove_unit(self, unit):
@@ -729,7 +919,7 @@ class attribute_plot(plot_object):
 
             # Replace Vertically
             X = index
-            for Y, ax in enumerate(self.axs[: X]):
+            for Y, ax in enumerate(self.axs[:, X]):
                 self._remove_unit_from_axes(i, X, Y) # remove the unit from the axis
                 self._add_unit_to_axes(data[X], data[Y], X, Y, self.colors[i], index=i)
 
@@ -770,6 +960,12 @@ class attribute_plot(plot_object):
 
 
 class pca_plot(attribute_plot):
+    """
+    The PCA plot is a special case of the attribute plot. This is because
+    the axis (PCs) have to be re-calculated when a channel is placed or
+    changed. For standard attributed plots, they are fixed.
+
+    """
     
     def startup(self):
         
@@ -791,6 +987,7 @@ class pca_plot(attribute_plot):
         
         # Prevent the diagonal plots from being overwritten
         self.update_diagonal = False
+
 
     def change_channel(self, index, new_channel):
         """
@@ -820,7 +1017,7 @@ class pca_plot(attribute_plot):
 
             # Replace Vertically
             X = index
-            for Y, ax in enumerate(self.axs[: X]):
+            for Y, ax in enumerate(self.axs[:, X]):
                 self._remove_unit_from_axes(i, X, Y) # remove the unit from the axis
                 self._add_unit_to_axes(data[X], data[Y], X, Y, self.colors[i], index=i)
 
@@ -850,7 +1047,8 @@ class waveform_plot(plot_object):
             cols-= 1
         rows = int(len(self.channels)/cols)
         fig, axs = plt.subplots(figsize=[4*cols, 4*rows], nrows=rows, 
-                                ncols=cols,tight_layout=True, sharex=True)
+                                ncols=cols,tight_layout=True, sharex=True,
+                                sharey=True)
         axs = axs.ravel()
         
         # Store the axes handles    
@@ -894,17 +1092,25 @@ class waveform_plot(plot_object):
 
         # Grab the ax
         ax = self.axs[axes_X]
-        ax.set_title(f'Channel: {chan}') 
+        ax.set_title(f'Channel: {chan}')
 
 
 class time_plot(plot_object):
+    """
+    Time_plots plot data in time. Time is on the X-axis, while the parameter
+    of interest is on the Y-axis. Different channels are represented in
+    different plots, stacked vertically. 
+
+    """
+
         
     def make_figure(self):
         
         # Make the figure
         n_channels = len(self.channels)
         fig, axs = plt.subplots(figsize=[10, 12], nrows=n_channels, 
-                                ncols=1, tight_layout = True, sharex=True)
+                                ncols=1, tight_layout = True, sharex=True,
+                                sharey=True)
         axs = axs.ravel()
         axs[-1].set_xlabel('Time (s)')
         self.axs = axs

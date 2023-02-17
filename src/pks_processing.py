@@ -293,8 +293,8 @@ class pks_dataset:
         """
         In general, we want the units and the channels to be lists of length>0. It is
         possible for the untis to be str instead of int, but the channels should
-        always be ints. In addition, if the user does not specify units or channels
-        (i.e. they are "None") they they should be infered from a plot that is
+        always be int. In addition, if the user does not specify units or channels
+        (i.e. they are "None") then they should be infered from a plot that is
         currently open.
 
         Returns
@@ -304,10 +304,10 @@ class pks_dataset:
         """
 
         if units is None:
-            units = self.linked_plots[0].units
+            units = self.linked_plots[0].units[:]
 
         if channels is None:
-            channels = self.linked_plots[0].channels
+            channels = self.linked_plots[0].channels[:]
 
         units = self._check_if_list(units)
         channels = self._check_if_list(channels)
@@ -540,7 +540,7 @@ class pks_dataset:
             return unit_channel_list, spike_chanel_list 
         
         # If not, we'll have to build it    
-        print('Building channel list (only necesary on first run).')
+        print('Building channel list (only necessary on first run).')
         
         unit_list = self.clusters.index.values
         channel_hash = {unit:self._unit_channel(unit) for unit in unit_list}

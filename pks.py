@@ -8,15 +8,22 @@ Last Updated: Nov 11 14:01:20 2022
 @autor: Han de Jong
 """
 
-# Imports
-import sys; sys.path.append('./src/')
+# Find the path to this file and work with it.
+"""
+I use this so I can keep all PKS files in a Github folder and use
+a simple system alias to call is when I'm inside a folder with data.
+
+For instance:
+alias pks="ipython -i /home/han/Git/post-kilosort/pks.py"
+
+"""
+this_file = __file__
+pks_path = this_file[:-this_file[-1:0:-1].find('/')]
+import sys; sys.path.append(pks_path + 'src/')
+
+# Other imports:
 from pks_processing import pks_dataset
 import matplotlib.pyplot as plt
-
-# Startup
-plt.ion()
-
-
 
 
 def welcome_message():
@@ -27,6 +34,9 @@ def welcome_message():
 
 
 if __name__=='__main__':
+
+	# Setup interactive plotting
+	plt.ion()
 
 	# Grab the path from input argument
 	path = sys.argv[1]

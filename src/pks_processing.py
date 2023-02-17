@@ -61,71 +61,69 @@ from pks_plotting import pks_plotting
 from pks_spike_sorting import sorter
 from sklearn.decomposition import PCA
 
+
 class pks_dataset:
     """
     The main PKS dataclass
     """
-    
-    def __init__(self, path:str):
-        
+
+    def __init__(self, path: str):
+
         # Error handeling
-        
-        
+
         # Store the path and other variables
         self.path = self._check_path(path)
         self._check_folder()
-        
+
         # Load the data
         self._load_data()
-        
+
         # The signal we'll use for analysis
         self.signal_path = self.params['dat_path'].split('/')[-1]
-        
+
         # Make or check folder structure
         self._check_folder()
 
         # Adding external methods
         self.plot = pks_plotting(self)
         self.sort = sorter(self)
-        
+
         # Where we will put handles to linked plots
         self.linked_plots = []
 
         # Where we will store units that are finished
         self.done = []
-        
+
         # Run the change set
         # NOTE: it is just a Python scripts. You can put anything you want in
         # there!
         self.save_data = False
         exec(open(self.path + 'pks_data/changeSet.py').read())
         self.save_data = True
-    
-        
+
     def build_waveforms(self):
         """
-        
+
         Grabs the raw signal (defined in self.signal_path) and extracts all the
         waveforms. Extracted waveforms are saved as sparce matrixes, resulting
         in a significantly more managable dataset.
-        
+
         Returns
         -------
         None.
 
         """
-        
+
         # Start a pool and do all the work.
         with Pool() as pool:
             print(f'Extracting raw waveforms on {cpu_count()} cores')
-            res = pool.map(self._build_waveform, 
+            res = pool.map(self._build_waveform,
                            range(self.params['n_channels']))
 
-
-    def get_waveform(self, spikes:np.array, channel:int, average:bool=True,
-                     sample:int=None, return_spikes=False):
+    def get_waveform(self, spikes: np.array, channel: int, average: bool = True,
+                     sample: int = None, return_spikes=False):
         """
-        
+
         Will grab the waveforms at time 'spikes' and return either the
         average waveform or a large 2D numpy array with all waveforms.
 
@@ -154,45 +152,44 @@ class pks_dataset:
             a 1-D array with the spikesTimes of the waveforms
 
         """
-        
+
         # Sanitize inputs
         spikes = spikes.astype(int)
-        
+
         # Are we sampling?
         if not sample is None:
-            if len(spikes)>sample:
+            if len(spikes) > sample:
                 i = int(len(spikes)/sample)
-                spikes = spikes [0::i]
-                
+                spikes = spikes[0::i]
+
         # Grab the signal we want to work on
         data = self._get_raw_signal()
-        
+
         # Output data
         output = np.zeros([len(spikes), 82])
-        
+
         # Grab the data
         for i, spike in enumerate(spikes):
             try:
                 output[i, :] = data[spike-41:spike+41, channel]
             except:
                 print(f'Unable to grab waveform {i}')
-                
+
         # Make the output
         if average:
             waveform = np.mean(output, axis=0)
         else:
             waveform = output
-        
+
         if return_spikes:
             return waveform, spikes
         else:
             return waveform
-    
-        
-    def get_template(self, unit:int, all_channels:bool=False):
+
+    def get_template(self, unit: int, all_channels: bool = False):
         """
         Grabs the 2D template of the unit in 'unit'.
-        
+
         NOTE: currently only possible for Kilosort units. We don't make new
         templates for pks-clustered units.
 
@@ -209,18 +206,17 @@ class pks_dataset:
         Pandas DataFrame with the unit template.
 
         """
-        
+
         # Load the template
         all_templates = np.load(self.path+'templates.npy')
-        template = pd.DataFrame(all_templates[unit, :,:].transpose())
-        
+        template = pd.DataFrame(all_templates[unit, :, :].transpose())
+
         # Unless the caller wants all channels, ommit the channels without template
         if not all_channels:
-            template = template.iloc[(template.sum(axis=1)!=0).values, :]
-            
+            template = template.iloc[(template.sum(axis=1) != 0).values, :]
+
         return template
 
-    
     def get_unit_spikes(self, unit):
         """
         Returns 
@@ -230,24 +226,23 @@ class pks_dataset:
         unit : int or str
             Identifyer of the unit of interest. Should match up with a value in
             self.spikeID.
-            
+
         Returns
         -------
         Numpy array with a list of spikes (data point numbers) of this unit.
 
         """
-        
-        return self.spikeTimes[self.spikeID==unit]
-    
-    
-    def channel_pca(self, channel:int, units=None, n_components:int=1):
+
+        return self.spikeTimes[self.spikeID == unit]
+
+    def channel_pca(self, channel: int, units=None, n_components: int = 1):
         """
         Does a principal component (PCA) analysis on one channel. The waveforms 
         that are used to do the PCA over are either the waveforms indicated
         by the spikes of the units in 'units', or defined defined by the
         spikes of all units that are within 2 channels above or below this
         channel.
-        
+
         Note: not all data is loaded to do the PCA over, instead a sample of
         1000 waveforms is used.
 
@@ -267,28 +262,27 @@ class pks_dataset:
             A fitted PCA object.
 
         """
-        
+
         spikes = []
         if units is None:
-            indexer = (self.clusters.mainChannel>channel-3) &\
-                (self.clusters.mainChannel<channel+3)
+            indexer = (self.clusters.mainChannel > channel-3) &\
+                (self.clusters.mainChannel < channel+3)
             units = self.clusters[indexer].index
-            
+
         for unit in units:
             spikes.extend(self.get_unit_spikes(unit))
         spikes = np.array(spikes)
-            
+
         # Get the waveforms
-        waveforms = self.get_waveform(spikes, channel, sample=1000, 
+        waveforms = self.get_waveform(spikes, channel, sample=1000,
                                       average=False)
-        
+
         # Do the pca
         pca = PCA(n_components=n_components)
         pca.fit(waveforms)
-    
+
         return pca
 
-    
     def _infer_unit_channels(self, units, channels):
         """
         In general, we want the units and the channels to be lists of length>0. It is
@@ -313,8 +307,6 @@ class pks_dataset:
         channels = self._check_if_list(channels)
 
         return units, channels
-
-      
 
     def _check_if_list(self, input_value):
         """
@@ -342,14 +334,12 @@ class pks_dataset:
 
         raise Exception(f'{input_value.__class__} is not a valid input type.')
 
-
-
     def _get_raw_signal(self):
         """
         Makes a memory pap linking to the signal. Currently supported signals. 
         The path to the signal of interest is stored in self.signal_path.
         Currently supported signals are:
-            
+
             - temp_wh.dat (output of Kilosort, whitened and hp filtered)
             - continous.dat (output of open Ephys)
             - some file ending in .bin (output of SpikeGLX)
@@ -359,44 +349,43 @@ class pks_dataset:
         Memmap to the signal of interest
 
         """
-        
+
         # NOTE, self.params['dtype'] has the Kilosort output data type. In the
         # future this might not work for Open Ephys and/or SpikeGLX data.
-        
+
         # Make the memmap
-        data = np.memmap(self.path + self.signal_path, 
-                         dtype= self.params['dtype'])
-        
+        data = np.memmap(self.path + self.signal_path,
+                         dtype=self.params['dtype'])
+
         # Whitened Kilosort output
         if self.signal_path == 'temp_wh.dat':
             #print('Loading Kilosort output signal.')
-            data = data.reshape([-1, 383])     
+            data = data.reshape([-1, 383])
             return data
-        
+
         # Raw Open Ephys output
         if self.signal_path == 'continous.dat':
             #print('Loading Open Ephys output signal.')
             data = data.reshape([-1, 384])
-            
+
             # Todo Remove channel 190!
-            
+
             return data
-        
+
         # Spike GLX output
         if self.signal_path[-4:] == '.bin':
 
             data = data.reshape([-1, 385])
             # Todo Remove channel 190.
             # Shall we leave channel 384 (sync pulses)?
-                
-            return 
-        
+
+            return
+
         # RAISE ERROR
-        
-    
-    def _build_waveform(self, channel:int, chan_range=[-10, 10]):
+
+    def _build_waveform(self, channel: int, chan_range=[-10, 10]):
         """
-        
+
         Extracts waveforms from the raw signal.
 
         Parameters
@@ -413,65 +402,66 @@ class pks_dataset:
         None.
 
         """
-        
+
         # Update the user
         print(f'Working on channel: {channel}.')
-        
+
         # Grab the spike times on channels close by
         _, spike_channel_list = self._build_channel_list()
-        indexer = (spike_channel_list>=channel + chan_range[0]) & \
-            (spike_channel_list<=channel + chan_range[1])
+        indexer = (spike_channel_list >= channel + chan_range[0]) & \
+            (spike_channel_list <= channel + chan_range[1])
         spike_times_selection = self.spikeTimes[indexer]
-        
+
         # Grab from the raw data
         waveforms = self.get_waveform(spike_times_selection,
-                                       channel,
-                                       average=False)
-        
+                                      channel,
+                                      average=False)
+
         # Output
         output = np.zeros((len(self.spikeTimes), waveforms.shape[1]))
         output[indexer, :] = waveforms
-        
+
         # Make sparce and save
         output = csr_matrix(output.transpose())
         save_npz(self.path + f'pks_data/raw/channel_{channel}.npz', output)
 
-     
     def _load_data(self):
         """
         Responsible for loading the data
-    
+
         Returns
         -------
         None.
-    
+
         """
-        
+
         # load all tsv files first
-        files = ['cluster_Amplitude.tsv', 'cluster_ContamPct.tsv', \
-                  'cluster_group.tsv']
+        files = ['cluster_Amplitude.tsv', 'cluster_ContamPct.tsv',
+                 'cluster_group.tsv']
         clusters = [self._load_tsv(self.path + file) for file in files]
         self.clusters = pd.concat(clusters, axis=1)
-                   
+
         # Load all spike times
-        self.spikeTimes = np.load(self.path + 'spike_times.npy').ravel().astype(int)
-        self.spikeID = np.load(self.path + 'spike_clusters.npy').ravel().astype(int)
-        
+        self.spikeTimes = np.load(
+            self.path + 'spike_times.npy').ravel().astype(int)
+        self.spikeID = np.load(
+            self.path + 'spike_clusters.npy').ravel().astype(int)
+
         # Add the Spike count to the data
         for i in self.clusters.index:
-            self.clusters.loc[i, 'spikeCount'] = (self.spikeID==i).sum()
+            self.clusters.loc[i, 'spikeCount'] = (self.spikeID == i).sum()
 
         # Delete units with 0 spikes
-        self.clusters = self.clusters[self.clusters.spikeCount>0]
-            
+        self.clusters = self.clusters[self.clusters.spikeCount > 0]
+
         # Add the channel list
         temp, _ = self._build_channel_list()
         self.clusters.loc[:, 'mainChannel'] = temp
-            
+
         # Add channel_map
         temp = np.load(self.path + 'channel_positions.npy')
         self.channel_positions = pd.DataFrame(temp, columns=['X', 'Y'])
-        
+
         # Recording and Kilosort paramters
         sys.path.append(self.path)
         from params import dat_path, n_channels_dat, dtype, offset, sample_rate, hp_filtered
@@ -486,7 +476,6 @@ class pks_dataset:
         # Finally, load the similarity matrix
         self.similarity_matrix = np.load(self.path + 'similar_templates.npy')
 
-        
     def _check_folder(self):
         """
 
@@ -494,29 +483,28 @@ class pks_dataset:
         makes the data folder.
 
         """
-        
+
         # Check if folder exists
         if not os.path.isdir(self.path + 'pks_data'):
             print('Creating PKS output folder.')
             os.mkdir(self.path + 'pks_data')
-            
+
         # Check if the change_set file exists
         if not os.path.isfile(self.path + 'pks_data/changeSet.py'):
             print('Creating the changeSet file.')
             with open(self.path + 'pks_data/changeSet.py', 'a') as f:
                 f.write('# This file will execute in PKS. It contains all')
                 f.write('modifications of the Kilosort dataset\n')
-        
+
         # Check if raw folder exists
         if not os.path.isdir(self.path + 'pks_data/raw'):
             os.mkdir(self.path + 'pks_data/raw')
-            
+
         # Check if we allready have one or more extracted channels
         if not os.path.isfile(self.path + 'pks_data/raw/channel_0.npz'):
             print('To build the waveforms run:')
             print('>>> self.build_waveforms()')
-            
-        
+
     def _build_channel_list(self):
         """
         Build the list of the channels on which any particular unit (as
@@ -525,69 +513,68 @@ class pks_dataset:
         contains the channel list that is valid for the raw Kilosort output
         no changes are saved. These are instead applied to the data in this
         object using the 'changeSet' file.                                                             
-                                                                    
+
         Returns
         -------
         channel_list:numpy array
             Vector containing the channel on which the unit at index 'i' has
             the larges amplitude.
         """
-        
+
         # Check if the file allready exists:
         if os.path.isfile(self.path + 'pks_data/unit_channel_list.npy'):
-            unit_channel_list = np.load(self.path + 'pks_data/unit_channel_list.npy')
-            spike_chanel_list = np.load(self.path + 'pks_data/spike_channel_list.npy')
-            return unit_channel_list, spike_chanel_list 
-        
-        # If not, we'll have to build it    
+            unit_channel_list = np.load(
+                self.path + 'pks_data/unit_channel_list.npy')
+            spike_chanel_list = np.load(
+                self.path + 'pks_data/spike_channel_list.npy')
+            return unit_channel_list, spike_chanel_list
+
+        # If not, we'll have to build it
         print('Building channel list (only necessary on first run).')
-        
+
         unit_list = self.clusters.index.values
-        channel_hash = {unit:self._unit_channel(unit) for unit in unit_list}
-        unit_channel_list = np.array([channel_hash[i] for i in unit_list])  
-        
+        channel_hash = {unit: self._unit_channel(unit) for unit in unit_list}
+        unit_channel_list = np.array([channel_hash[i] for i in unit_list])
+
         # Save the channel list
         np.save(self.path + 'pks_data/unit_channel_list.npy', unit_channel_list)
-        
+
         # Also build and save the spike_channel list
         spike_channel_list = np.array([channel_hash[i] for i in self.spikeID])
         np.save(self.path + 'pks_data/spike_channel_list.npy', spike_channel_list)
 
-        return unit_channel_list, spike_channel_list     
+        return unit_channel_list, spike_channel_list
 
-        
     def _unit_channel(self, unit):
         """
         Grab the template and figure out on which channel the amplitude is
         largest.
         """
-        
+
         template = self.get_template(unit).abs()
-        
+
         return template.max(axis=1).idxmax()
 
-    
-    def _load_tsv(self, file:str):
+    def _load_tsv(self, file: str):
         """
         Loads tab-sepparated files into a Pandas DataFrame.
-    
+
         Parameters
         ----------
         file : String
             A String containing a filepath
-    
+
         Returns
         -------
         data : DataFrame
             DataFrame containing the data in the tsv file.
-    
+
         """
-        
+
         data = pd.read_csv(file, sep='\t')
         data.set_index('cluster_id', inplace=True)
-        
-        return data    
 
+        return data
 
     def _check_linked_plots(self):
         """
@@ -599,16 +586,15 @@ class pks_dataset:
             if pop:
                 self.linked_plots.pop(i)
 
-
-    def _check_path(self, path:str):
+    def _check_path(self, path: str):
         """
         Quick error handeling of the input parameter
-    
+
         Parameters
         ----------
         path : string
             path to Kilosort dataset
-    
+
         Returns
         -------
         Nothing if correct, but trows an error if the path is not a real path and
@@ -617,10 +603,9 @@ class pks_dataset:
         # Formatting
         if not path[-1] == '/':
             path = path + '/'
-    
+
         # Check if a real path
-        
-        
+
         # Check if kilosort files available
         #   amplitudes.npy
         #   channel_positions.npy
@@ -632,11 +617,11 @@ class pks_dataset:
         #   similar_templates.npy
         #   spike_clusters.npy
         #   spike_templates.npy
-        
+
         # Only print warning if we can't find this one
         #   temp_wh.dat
-        
+
         # Later will also theck for raw data
         #   the ap.bin file (SpikeGLX or a .dat file (open Ephys))
-        
+
         return path

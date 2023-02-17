@@ -11,6 +11,7 @@ Last Updated: Nov 11 14:01:20 2022
 @author: Han de Jong
 """
 
+
 def _calc_amplitude(waveforms, other=None):
     """
     Calculate the amplitude of each waveform in waveforms
@@ -25,20 +26,20 @@ def _calc_amplitude(waveforms, other=None):
         The amplitude of each waveform in the input dataset.
 
     """
-    
+
     return waveforms.max(axis=1) + -1*waveforms.min(axis=1)
 
-    
+
 def _calc_peak(waveforms, other=None):
-    
+
     # Look only at index window
-    
-    # 
-    
+
+    #
+
     pass
 
 
 # Make the functions available
-if not __name__ =='__main__':
+if not __name__ == '__main__':
     _calc_amplitude = _calc_amplitude
     _calc_peak = _calc_peak

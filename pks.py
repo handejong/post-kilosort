@@ -8,24 +8,24 @@ Last Updated: Nov 11 14:01:20 2022
 @autor: Han de Jong
 """
 
-# Find the path to this file and work with it.
+
 """
+Find the path to this file and work with it.
+
 I use this so I can keep all PKS files in a Github folder and use
 a simple system alias to call is when I'm inside a folder with data.
 
 For instance:
 alias pks="ipython -i /home/han/Git/post-kilosort/pks.py"
-
 """
 import sys
-import matplotlib.pyplot as plt
-from pks_processing import pks_dataset
 this_file = __file__
 pks_path = this_file[:-this_file[-1:0:-1].find('/')]
 sys.path.append(pks_path + 'src/')
 
 # Other imports:
-
+from pks_processing import pks_dataset
+import matplotlib.pyplot as plt
 
 def welcome_message():
 

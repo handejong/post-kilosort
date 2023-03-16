@@ -135,15 +135,26 @@ class sorter:
 
         return clusters
 
-    def neighbors(self, unit, o=3):
+    def neighbors(self, unit, o:int = 3, min_spikes:int = 0 ):
         """
         Shows the units (prints to terminal) the units that are on the channels
         close to "unit".
 
+        Paramters
+        ---------
+        o : int
+            How close the the unit (n channels) has to be
+        minimum_spikes : int
+            How many spikes the units should have to be included.
+
+
         """
 
         channel = self.data.clusters.loc[unit].mainChannel
-        return self.data.clusters.query("mainChannel>@channel-@o & mainChannel<@channel+@o")
+        neighbors = self.data.clusters.query("mainChannel>@channel-@o & mainChannel<@channel+@o")
+        neighbors = neighbors[neighbors.spikeCount>min_spikes]
+
+        return neighbors
 
     def update_plots_remove(self, unit):
 

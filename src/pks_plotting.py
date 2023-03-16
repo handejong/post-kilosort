@@ -269,6 +269,46 @@ class pks_plotting:
         _ = [i.change_channel(index, new_channel)
              for i in self.data.linked_plots]
 
+    def focus_unit(self, unit_id):
+        """
+        Will update all plots to just show one unit on the most appropriate
+        channels.
+        """
+
+        # Are there any plots?
+        if len(self.data.linked_plots)==0:
+            print('There are not plots open')
+            return
+
+        # Grab all units in all plots and remove them
+        all_units = []
+        for plot in self.data.linked_plots:
+            all_units.extend(plot.units)
+        _ = [self.remove_unit(unit) for unit in set(all_units)]
+
+        # Set the right channels
+        channel = self.data.clusters.loc[unit_id].mainChannel
+        n_channels = len(self.data.linked_plots[0].channels)
+        if n_channels%2 == 0:
+            start = channel-int(n_channels/2-1)
+            stop = channel + int(n_channels/2)+1
+        else:
+            start = channel - int(n_channels/2-0.5)
+            stop = channel + int(n_channels/2+0.5)
+        channels = [i for i in range(start, stop)]
+        if channels[0]<0:
+            channels = [i + -1*channels[0] for i in channels] 
+        for i, channel in enumerate(channels):
+            self.change_channel(i, channel)
+
+        # Plot the unit
+        self.add_unit(unit_id)
+
+        # Display the neighbors
+        print('On the same channel there are:')
+        print(self.data.sort.neighbors(unit_id, 1))
+
+
     def _plot_waveform(self, data, ax=None, color='red'):
         """
         Responsible for plotting one or more waveforms
@@ -409,14 +449,14 @@ class plot_object:
         """
 
         # Multiple units or just 1?
-        if not (units.__class__ == list) | (units.__class__ == tuple):
+        if not (units.__class__ == list) | (units.__class__ == tuple) | (units.__class__ == np.ndarray):
             units = [units]
 
         for unit in units:
 
             # Check if unit is not allready in there
             if unit in self.units:
-                return None
+                continue
 
             # Grab spikes
             spikes = self.data.get_unit_spikes(unit)
@@ -443,7 +483,7 @@ class plot_object:
         """
 
         # Multiple units or just 1?
-        if not (units.__class__ == list) | (units.__class__ == tuple):
+        if not (units.__class__ == list) | (units.__class__ == tuple) | (units.__class__ == np.ndarray):
             units = [units]
 
         for unit in units:
@@ -499,29 +539,6 @@ class plot_object:
 
         for i, channel in enumerate(channels):
             self.change_channel(i, channel)
-
-    def show_only(self, units):
-        """
-        Should remove all units except the units in 'units'. However: it
-        is currently BROKEN.
-
-        Parameters
-        ----------
-        units : list or NumPy Array
-            List of units that should stay visible.
-
-        Returns
-        -------
-        None.
-
-        """
-
-        if not units.__class__ == list:
-            units = [units]
-
-        for unit in self.units:
-            if unit not in units:
-                self.remove_unit(unit)
 
     def update(self, unit):
         """
@@ -677,7 +694,7 @@ class plot_3D(plot_object):
         """
 
         # Multiple units or just 1?
-        if not (units.__class__ == list) | (units.__class__ == tuple):
+        if not (units.__class__ == list) | (units.__class__ == tuple) | (units.__class__ == np.ndarray):
             units = [units]
 
         for unit in units:
@@ -712,7 +729,7 @@ class plot_3D(plot_object):
         """
 
         # Multiple units or just 1?
-        if not (units.__class__ == list) | (units.__class__ == tuple):
+        if not (units.__class__ == list) | (units.__class__ == tuple) | (units.__class__ == ndarray):
             units = [units]
 
         for unit in units:
@@ -803,7 +820,7 @@ class attribute_plot(plot_object):
     def add_unit(self, units):
 
         # Multiple units or just 1?
-        if not (units.__class__ == list) | (units.__class__ == tuple):
+        if not (units.__class__ == list) | (units.__class__ == tuple) | (units.__class__ == np.ndarray):
             units = [units]
 
         for unit in units:
@@ -1008,7 +1025,7 @@ class pca_plot(attribute_plot):
         # Update the plot
         self.plot_handles[index, index][0].remove()
         self.plot_handles[index, index] = self.axs[index, index].plot(
-            self.other_data[i].components_.transpose())
+            self.other_data[index].components_.transpose())
 
     def attribute_function(self, data, channel):
 

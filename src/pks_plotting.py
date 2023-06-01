@@ -114,7 +114,7 @@ class pks_plotting:
         # Do the channel PCAs
         pca = []
         for channel in channels:
-            pca.append(self.data.channel_pca(channel, None))
+            pca.append(self.data.channel_pca(channel))
 
         return pca_plot(self, units, channels, other_data=pca)
 
@@ -140,6 +140,27 @@ class pks_plotting:
 
         """
         return time_plot(self, units, channels, atf._calc_amplitude)
+
+    def peri_event(self, units=None, stamps=None):
+        """
+
+        Plot the spikes as events relative 
+
+        Parameters
+        ----------
+        units : list of units or a single int
+            List (or NumPy Array) of the units you want to plot.
+        stamps: an array with timestamps in seconds
+        NOTE: if units or channels == None, it will be infered from currently
+        open plots.
+
+        Returns
+        -------
+        axs : A peri-event plot
+            This object controls the behavior of peri-event plot
+
+        """
+        return peri_event_plot(self, units=units, channels=[1, 2, 3], other_data=stamps)
 
     def custom_plot(self, units, channels, type='time_plot', attribute_function=None):
         """
@@ -182,7 +203,7 @@ class pks_plotting:
         """
 
         spikes = self.data.get_unit_spikes(unit)
-        isi = 1000*np.diff(spikes)/self.data.params['sample_rate']
+        isi = 1000*np.diff(spikes)/float(self.data.metadata['imSampRate'])
 
         fig, ax = plt.subplots(1)
         ax.hist(isi, bins=np.linspace(0, 25, 25), density=True, range=(0, 25))
@@ -371,7 +392,7 @@ class pks_plotting:
         unit_1 = unit_1[unit_1 < unit_2[-1]]
 
         interval = np.array([unit_2[unit_2 > i][0]-i for i in unit_1])
-        interval = 1000*interval/self.data.params['sample_rate']
+        interval = 1000*interval/float(self.data.metadata['imSampRate'])
 
         return interval
 
@@ -1128,7 +1149,7 @@ class time_plot(plot_object):
         data, X = self.data.get_waveform(spikes, channel,
                                          average=False, sample=self.plotter.plot_max,
                                          return_spikes=True)
-        X = X/self.data.params['sample_rate']
+        X = X/float(self.data.metadata['imSampRate'])
         data = self.attribute_function(data)
 
         return data, X
@@ -1155,3 +1176,164 @@ class time_plot(plot_object):
         ax = self.axs[axes_X]
         ax.set_ylabel(f'Channel: {self.channels[axes_X]}')
         ax.set_yticks([])
+
+class peri_event_plot(plot_object):
+    """
+    Peri_event_plots plot the unit stamps surounding an event.
+
+    """
+
+    def make_figure(self):
+
+        # Make the figure
+        fig, axs = plt.subplots(figsize=[10, 12], nrows=2,
+                                ncols=1, tight_layout=True, sharex=True,
+                                sharey=False)
+        axs = axs.ravel()
+       
+        self.axs = axs
+
+        # Formatting
+        axs[1].set_xlabel('Time (s)')
+        axs[1].set_ylabel('p fires')
+        axs[0].invert_yaxis()
+        axs[0].set_ylabel('Trial')
+        axs[0].axis('off')
+        axs[1].spines['top'].set_visible(False)
+        axs[1].spines['right'].set_visible(False)
+
+        plt.suptitle('Peri Event Plot')
+
+        return fig
+
+    def startup(self):
+
+        # Add empty handles for the plots
+        self.plot_handles = {'event_plot': [], 'histogram': []}
+
+    def add_unit(self, units):
+        """
+        Responsible for adding one or more units to every axes in the plot.
+        It sould:
+            - Draw the unit on every axes
+            - Include the unit in the object (self.units.append)
+
+        """
+
+        # Multiple units or just 1?
+        if not (units.__class__ == list) | (units.__class__ == tuple) | (units.__class__ == np.ndarray):
+            units = [units]
+
+        for unit in units:
+
+            # Check if unit is not allready in there
+            if unit in self.units:
+                continue
+
+            # Grab spikes
+            spikes = self.data.get_unit_spikes(unit)/float(self.data.metadata['imSampRate'])
+
+            # Figure out color
+            color = self._get_color()
+            self.colors.append(color)
+
+            # Draw the unit
+            event_data, hist, bins = self._get_plot_data(spikes, self.other_data)
+            self._add_unit_to_axes(event_data, hist, bins, color)
+
+            # Add the unit
+            self.units.append(unit)
+
+        # Add (update) the legend
+        self._add_legend()
+
+    def change_channel(self, *kwargs):
+
+        pass
+
+    def roll(self, *kwargs):
+
+        pass
+
+    def remove_unit(self, units):
+        """
+        Responsible for removing one or more units from all linked
+        axes.
+        """
+
+        # Multiple units or just 1?
+        if not (units.__class__ == list) | (units.__class__ == tuple) | (units.__class__ == np.ndarray):
+            units = [units]
+
+        for unit in units:
+            # Check if unit in there
+            if unit not in self.units:
+                return None
+
+            # Get index of unit
+            index = self.units.index(unit)
+
+            # Remove the units
+            self.units.pop(index)
+            self.colors.pop(index)
+
+            # Remove the plots
+            # Remove the unit
+            self._remove_unit_from_axes(index)
+
+
+        # Update the legend
+        self._add_legend()
+
+    def _remove_unit_from_axes(self, index):
+        """
+        Removes a unit from both axes
+        """
+
+        # Grab the handles
+        event_handles = self.plot_handles['event_plot'].pop(index)
+        hist_handle = self.plot_handles['histogram'].pop(index)
+
+        # Delete all event plots
+        _ = [i.remove() for i in event_handles]
+
+        # Delete the histogram
+        hist_handle.remove()
+
+    def _get_plot_data(self, spikes_or_unit, stamps):
+
+        # Grab spikes
+        if (spikes_or_unit.__class__ == int) | (spikes_or_unit.__class__ == str) | (spikes_or_unit.__class__ == np.int64):
+            spikes = self.data.get_unit_spikes(spikes_or_unit)
+        else:
+            spikes = spikes_or_unit
+
+        # Might make this more flexible later
+        bin_size = 0.1
+        peri_event_window=(-5.0, 5.0)
+        num_bins = int((peri_event_window[1] - peri_event_window[0]) / bin_size)
+        
+        # Grab the event data
+        event_data = []
+        for stamp in stamps:
+            relative_window = np.array(peri_event_window) + stamp
+            event_data.append(spikes[(relative_window[0] <= spikes) & (spikes <= relative_window[1])] - stamp)
+
+        # Grab the histogram data
+        hist, bins = np.histogram(spikes - stamps[:, np.newaxis], bins=num_bins,
+                                      range=peri_event_window)
+        hist = hist/len(stamps)
+
+        return event_data, hist, bins
+
+    def _add_unit_to_axes(self, event_data, hist, bins, color):
+
+        # Plot the event plot
+        event_plot_handles = self.axs[0].eventplot(event_data, color=color, linewidths=1,
+            alpha = 0.5)
+        self.plot_handles['event_plot'].append(event_plot_handles)
+
+        # Plot the histogram
+        _, _, hist_handle = self.axs[1].hist(bins[:-1], bins, weights=hist, edgecolor=color,
+                                facecolor = color, alpha=0.5)
+        self.plot_handles['histogram'].append(hist_handle)

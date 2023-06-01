@@ -60,6 +60,7 @@ from multiprocessing import Pool, cpu_count
 from pks_plotting import pks_plotting
 from pks_spike_sorting import sorter
 from sklearn.decomposition import PCA
+import time
 
 
 class pks_dataset:
@@ -78,11 +79,8 @@ class pks_dataset:
         # Load the data
         self._load_data()
 
-        # The signal we'll use for analysis
-        self.signal_path = self.params['dat_path'].split('/')[-1]
-
         # Make or check folder structure
-        self._check_folder()
+        self._check_folder() # TODO twice?!
 
         # Adding external methods
         self.plot = pks_plotting(self)
@@ -157,23 +155,17 @@ class pks_dataset:
         spikes = spikes.astype(int)
 
         # Are we sampling?
-        if not sample is None:
-            if len(spikes) > sample:
-                i = int(len(spikes)/sample)
-                spikes = spikes[0::i]
+        if sample is not None and len(spikes) > sample:
+            spikes = spikes[::len(spikes) // sample]
 
         # Grab the signal we want to work on
         data = self._get_raw_signal()
 
         # Output data
-        output = np.zeros([len(spikes), 82])
-
-        # Grab the data
-        for i, spike in enumerate(spikes):
-            try:
-                output[i, :] = data[spike-41:spike+41, channel]
-            except:
-                print(f'Unable to grab waveform {i}')
+        try:
+            output = data[spikes[:, np.newaxis] + np.arange(-41, 41), channel]
+        except:
+            print("Unable to grab waveforms")
 
         # Make the output
         if average:
@@ -235,7 +227,7 @@ class pks_dataset:
 
         return self.spikeTimes[self.spikeID == unit]
 
-    def channel_pca(self, channel: int, units=None, n_components: int = 1):
+    def channel_pca(self, channel: int, units=[], n_components: int = 1):
         """
         Does a principal component (PCA) analysis on one channel. The waveforms 
         that are used to do the PCA over are either the waveforms indicated
@@ -263,12 +255,19 @@ class pks_dataset:
 
         """
 
+        # Essentially we only do PCA on waveforms that occured during an spike on
+        # a neighboring channel. But if we can't find spikes, we keep increasing
+        # the range of the channels we consider to be neighboring.
         spikes = []
-        if units is None:
-            indexer = (self.clusters.mainChannel > channel-3) &\
-                (self.clusters.mainChannel < channel+3)
+        channel_range = 2
+        while len(units)==0:
+            channel_range += 1
+            indexer = (self.clusters.mainChannel > channel-channel_range) &\
+                (self.clusters.mainChannel < channel+channel_range)
             units = self.clusters[indexer].index
-
+            print(f'PCA on channel {channel} with range {channel_range}')
+    
+        # Get the spikes for all those units
         for unit in units:
             spikes.extend(self.get_unit_spikes(unit))
         spikes = np.array(spikes)
@@ -282,6 +281,151 @@ class pks_dataset:
         pca.fit(waveforms)
 
         return pca
+
+    def get_nidq(self):
+        """
+        Will load NI DAQ data if available.
+
+        Currently will assume TTL pulses recorded at analog inputs. Pulses are
+        extracted through thresholding, exact values are ignored.
+
+        Returns:
+        --------
+        Pandas dataFrame were every pulse is a row.
+
+        """
+        # First check if NI data was recorded
+        if self.nidg_path is None:
+            print('No NI DAQ data recorded.')
+            return None
+
+        # Check if timestamps already exist
+        save_path = self.path + 'nidq.csv'
+        try:
+            output = pd.read_csv(save_path).set_index('#')
+            return output
+        except FileNotFoundError:
+            print('Deriving stamps from raw signal.')
+
+        # First grab the meta-data
+        nidq_meta = self._load_meta_file(self.nidg_path[:-3] + 'meta')
+
+        # Grab data
+        data = np.memmap(self.nidg_path, dtype='int16')
+        data = data.reshape([-1, int(nidq_meta['nSavedChans'])])
+
+        # Grab every channel
+        output = pd.DataFrame()
+        timeline = np.linspace(0, len(data) / (float(nidq_meta['niSampRate'])/1000), len(data))
+        for channel in range(data.shape[1]):
+
+            try:
+                selection = (data[:, channel]>10000).astype(int)
+
+                # Grab the pulses
+                diff = np.diff(selection)
+                starts = timeline[:-1][diff == 1]
+                stops = timeline[:-1][diff == -1]
+
+                # Filter starts and stops
+                starts = starts[starts < stops[-1]]
+                stops = stops[stops > starts[0]]
+
+                duration = stops - starts
+
+                # Create output DataFrame
+                temp = pd.DataFrame()
+                temp['Start'] = starts
+                temp['Stop'] = stops
+                temp['Duration'] = duration
+                temp['Channel'] = f'AI_{channel}'
+                temp['ITI'] = np.insert(np.diff(starts), 0, np.nan)
+
+                # Concatenate
+                output = pd.concat((output, temp), axis=0)
+            except:
+                print(f'No pulses on AI_{channel}')
+        
+        # Some formatting
+        output.index = range(len(output)) 
+        output.index.name = '#'
+        output.loc[:, 'Duration'] = output.Duration.round(1)
+        output.loc[:, 'ITI'] = output.ITI.round(1)
+        output.loc[:, 'Start'] = output.Start.round(1)
+        output.loc[:, 'Stop'] = output.Stop.round(1)
+
+        # Save the file
+        output.to_csv(save_path)
+
+        return output
+
+    def get_sync_pulses(self):
+        """
+        Will load the sync pulses
+
+        Imec cards have one TTL input that can be used for sync pulses.
+
+        What I hate about this function is that there is a lot of overlap with
+        get_nidq.
+
+        Returns:
+        --------
+        Pandas dataFrame were every pulse is a row.
+
+        """
+        # First check if NI daexitta was recorded
+
+        # Check if timestamps already exist
+        save_path = self.path + 'sync.csv'
+        try:
+            output = pd.read_csv(save_path).set_index('#')
+            return output
+        except FileNotFoundError:
+            print('Deriving stamps from raw signal.')
+
+        # First grab the meta-data and the path
+        sync_meta = self._load_meta_file(self._find_files_with_extension(self.path,
+            'lf.meta'))
+        sync_path = self._find_files_with_extension(self.path, 'lf.bin')
+
+        # Grab data
+        data = np.memmap(sync_path, dtype='int16')
+        data = data.reshape([-1, int(sync_meta['nSavedChans'])])
+
+        # Grab only channel 384
+        timeline = np.linspace(0, len(data) / (float(sync_meta['imSampRate'])/1000), len(data))
+        selection = (data[:, 384]>10).astype(int)
+
+        # Grab the pulses
+        diff = np.diff(selection)
+        starts = timeline[:-1][diff == 1]
+        stops = timeline[:-1][diff == -1]
+
+        # Filter starts and stops
+        starts = starts[starts < stops[-1]]
+        stops = stops[stops > starts[0]]
+
+        duration = stops - starts
+
+        # Create output DataFrame
+        output = pd.DataFrame(index = range(len(starts)))
+        output['Start'] = starts
+        output['Stop'] = stops
+        output['Duration'] = duration
+        output['ITI'] = np.insert(np.diff(starts), 0, np.nan)
+
+        # Some formatting
+        output.index.name = '#'
+        output.loc[:, 'Duration'] = output.Duration.round(1)
+        output.loc[:, 'ITI'] = output.ITI.round(1)
+        output.loc[:, 'Start'] = output.Start.round(1)
+        output.loc[:, 'Stop'] = output.Stop.round(1)
+
+        # Save the file
+        output.to_csv(save_path)
+
+        return output
+
 
     def _infer_unit_channels(self, units, channels):
         """
@@ -354,17 +498,17 @@ class pks_dataset:
         # future this might not work for Open Ephys and/or SpikeGLX data.
 
         # Make the memmap
-        data = np.memmap(self.path + self.signal_path,
+        data = np.memmap(self.signal_path,
                          dtype=self.params['dtype'])
 
         # Whitened Kilosort output
-        if self.signal_path == 'temp_wh.dat':
+        if self.signal_path.endswith('temp_wh.dat'):
             #print('Loading Kilosort output signal.')
             data = data.reshape([-1, 383])
             return data
 
         # Raw Open Ephys output
-        if self.signal_path == 'continous.dat':
+        if self.signal_path.endswith('continous.dat'):
             #print('Loading Open Ephys output signal.')
             data = data.reshape([-1, 384])
 
@@ -373,7 +517,7 @@ class pks_dataset:
             return data
 
         # Spike GLX output
-        if self.signal_path[-4:] == '.bin':
+        if self.signal_path.endswith('ap.bin'):
 
             data = data.reshape([-1, 385])
             # Todo Remove channel 190.
@@ -434,7 +578,6 @@ class pks_dataset:
         None.
 
         """
-
         # load all tsv files first
         files = ['cluster_Amplitude.tsv', 'cluster_ContamPct.tsv',
                  'cluster_group.tsv']
@@ -473,6 +616,10 @@ class pks_dataset:
         self.params['sample_rate'] = sample_rate
         self.params['hp_filtered'] = hp_filtered
 
+        # Store metadata
+        file_path = self.params['dat_path'].split('/')[-1].split('.')[0] + '.ap.meta'
+        self.metadata = self._load_meta_file(self.ap_meta_path)
+
         # Finally, load the similarity matrix
         self.similarity_matrix = np.load(self.path + 'similar_templates.npy')
 
@@ -483,7 +630,6 @@ class pks_dataset:
         makes the data folder.
 
         """
-
         # Check if folder exists
         if not os.path.isdir(self.path + 'pks_data'):
             print('Creating PKS output folder.')
@@ -586,9 +732,28 @@ class pks_dataset:
             if pop:
                 self.linked_plots.pop(i)
 
+    def _load_meta_file(self, file_path):
+        """
+        Will load .meta files that are output from SpikeGLX.
+
+        Returns:
+        --------
+        Dict with all key-value pairs form the .meta file.
+        """
+
+        config = {}
+        with open(file_path, 'r') as file:
+            for line in file:
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    key, value = line.split('=', 1)
+                    config[key] = value
+        return config
+
+
     def _check_path(self, path: str):
         """
-        Quick error handeling of the input parameter
+        Figure out the file_paths of the associated data files
 
         Parameters
         ----------
@@ -599,12 +764,22 @@ class pks_dataset:
         -------
         Nothing if correct, but trows an error if the path is not a real path and
         a different error if not all the files that Kilosort outputs are presents.
+
         """
         # Formatting
         if not path[-1] == '/':
             path = path + '/'
 
         # Check if a real path
+        # TODO
+
+        # Find the signal paths
+        self.signal_path = self._find_files_with_extension(path, 'temp_wh.dat')
+        self.raw_sigal_path = self._find_files_with_extension(path, 'ap.bin')
+        self.ap_meta_path = self._find_files_with_extension(path, 'ap.meta')
+
+        # If available get NI daq data
+        self.nidg_path = self._find_files_with_extension(path + '../', 'nidq.bin')
 
         # Check if kilosort files available
         #   amplitudes.npy
@@ -625,3 +800,10 @@ class pks_dataset:
         #   the ap.bin file (SpikeGLX or a .dat file (open Ephys))
 
         return path
+
+    def _find_files_with_extension(self, folder_path, extension):
+        for file_name in os.listdir(folder_path):
+            if file_name.endswith(extension):
+                return folder_path + file_name
+        return None
+

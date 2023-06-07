@@ -210,7 +210,7 @@ class pks_plotting:
         ax.set_xlabel('Inter-spike-interval (ms)')
         ax.set_ylabel('Density')
 
-        return ax
+        return fig
 
     def correlogram(self, units=None):
 
@@ -1247,6 +1247,9 @@ class peri_event_plot(plot_object):
         # Add (update) the legend
         self._add_legend()
 
+        # Rescale axis
+        self._rescale_axes()
+
     def change_channel(self, *kwargs):
 
         pass
@@ -1277,13 +1280,29 @@ class peri_event_plot(plot_object):
             self.units.pop(index)
             self.colors.pop(index)
 
-            # Remove the plots
             # Remove the unit
             self._remove_unit_from_axes(index)
 
+        # Rescale axis
+        self._rescale_axes()
 
         # Update the legend
         self._add_legend()
+
+    def _rescale_axes(self):
+        """
+        rescales the y-axis of the histogram to best fit the data
+        """
+
+        # Get the max value
+        max_value = 0
+        for i in self.plot_handles['histogram']:
+            temp = i.datavalues.max()
+            if temp>max_value:
+                max_value = temp
+
+        # Rescale
+        self.axs[1].set_ylim((0, max_value+0.1))
 
     def _remove_unit_from_axes(self, index):
         """

@@ -135,7 +135,7 @@ class sorter:
 
         return clusters
 
-    def neighbors(self, unit, o:int = 3, min_spikes:int = 0 ):
+    def neighbors(self, unit, o:int = 3, min_spikes:int = 0):
         """
         Shows the units (prints to terminal) the units that are on the channels
         close to "unit".
@@ -146,13 +146,15 @@ class sorter:
             How close the the unit (n channels) has to be
         minimum_spikes : int
             How many spikes the units should have to be included.
-
-
         """
 
         channel = self.data.clusters.loc[unit].mainChannel
         neighbors = self.data.clusters.query("mainChannel>@channel-@o & mainChannel<@channel+@o")
         neighbors = neighbors[neighbors.spikeCount>min_spikes]
+
+        # Add the similarity and sort by channel and similarity
+        neighbors['similarity'] = self.data.similarity_matrix.loc[neighbors.index, unit]
+        neighbors = neighbors.sort_values(['mainChannel', 'similarity'], ascending=[True, False])
 
         return neighbors
 

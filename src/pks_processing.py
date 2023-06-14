@@ -119,7 +119,7 @@ class pks_dataset:
                            range(self.params['n_channels']))
 
     def get_waveform(self, spikes: np.array, channel: int, average: bool = True,
-                     sample: int = None, return_spikes=False):
+                     sample: int = None, return_spikes=False, window=1.38):
         """
 
         Will grab the waveforms at time 'spikes' and return either the
@@ -141,6 +141,9 @@ class pks_dataset:
         return_spikes: bool
             If true, will return the sampled spikes as well (making it possible
             to plot waveforms on a timeline.)
+        window: float
+            Window (on both sides of the spike). Will be aproximated in data-
+            points (int).
 
         Returns
         -------
@@ -157,13 +160,19 @@ class pks_dataset:
         # Are we sampling?
         if sample is not None and len(spikes) > sample:
             spikes = spikes[::len(spikes) // sample]
+            if len(spikes)>sample:
+                spikes = spikes[:sample]
 
         # Grab the signal we want to work on
         data = self._get_raw_signal()
 
+        # What is the window size?
+        samp_rate = float(self.metadata['imSampRate'])/1000
+        window = int(samp_rate*window)
+
         # Output data
         try:
-            output = data[spikes[:, np.newaxis] + np.arange(-41, 41), channel]
+            output = data[spikes[:, np.newaxis] + np.arange(-window, window), channel]
         except:
             print("Unable to grab waveforms")
 
@@ -621,7 +630,7 @@ class pks_dataset:
         self.metadata = self._load_meta_file(self.ap_meta_path)
 
         # Finally, load the similarity matrix
-        self.similarity_matrix = np.load(self.path + 'similar_templates.npy')
+        self.similarity_matrix = pd.DataFrame(data = np.load(self.path + 'similar_templates.npy'))
 
     def _check_folder(self):
         """

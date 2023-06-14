@@ -42,6 +42,7 @@ Last Updated: Nov 11 14:01:20 2022
 
 # Dependend libraries
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 import seaborn as sns
@@ -249,6 +250,131 @@ class pks_plotting:
         # Finaly formatting
         plt.suptitle('Correlogram')
 
+    def raw_spike_sample(self, unit, channels, sample_n = 25, window = 3):
+        """
+        Plots a random sample of 'sample_n' waveforms. This is just to look
+        at the whitened or unfiltered raw signal. To get an idea if your 
+        spikes really belong to a unit or are part of the noise.
+
+        Parameters
+        ----------
+        unit : int
+            The unit that your are interested in
+        channel: int
+            The channel that will be plot
+        sample_n: int
+            The number of waveform
+        window: float
+            The window in ms (on both sides of the spike)
+
+        Returns
+        -------
+        ax : Matplotlib axes
+            Axes handle of the plot
+        """
+
+        # Convert channels
+        if channels.__class__ == int:
+            channels = [channels]
+
+        # Select the spikes
+        spikes = self.data.get_unit_spikes(unit)
+
+        # Make the figure
+        fig, axs = plt.subplots(1, len(channels), figsize = (6*len(channels), 10), 
+            facecolor='k', tight_layout = True, sharex = True)
+        if not axs.__class__ == np.ndarray:
+            axs = [axs]
+
+        # For every channel do this
+        for i, chan in enumerate(channels):
+
+            # Grab waveform
+            waveforms = self.data.get_waveform(spikes, channel=chan, average=False, 
+                sample=sample_n, window = window).transpose()
+            to_plot = pd.DataFrame(waveforms)
+
+            # Deal with the offset
+            offset = -0.5 * to_plot.min().min()
+            offseter = np.linspace(0, to_plot.shape[1]*offset, to_plot.shape[1])
+            to_plot = to_plot + offseter
+
+            # Update the axis
+            correction = ((len(to_plot)/2)-1)/(len(to_plot)/2)
+            to_plot.index = np.linspace(-window, correction*window, len(to_plot))
+
+            # Plot
+            to_plot.plot(linewidth=0.5, legend=False, color='w', ax=axs[i])
+            axs[i].set_facecolor('k')
+            axs[i].tick_params(axis='x', colors='w')
+            axs[i].set_xlabel('Time (ms)', color='w')
+            axs[i].set_title(f'Channel {chan}', color='w')
+            axs[i].set_yticks([])
+
+        # Final formatting
+        axs[0].set_ylabel(f'Trials (n = {sample_n}, uniformly picked)', color='white')
+
+        return fig, axs
+
+    def raw_unit_sample(self, unit, sample_n = 1000, window=3):
+        """
+        Plots the average respond (averaged over sample_n spikes) on
+        all channels.
+
+        Parameters
+        ----------
+        unit : int
+            The unit that your are interested in
+        sample_n: int
+            The number of spikes we'll average over to get the waveform
+        window: float
+            The window in ms (on both sides of the spike)
+
+        Returns
+        -------
+        ax : Matplotlib axes
+            Axes handle of the plot
+        """
+
+        # Select the spikes
+        spikes = self.data.get_unit_spikes(unit)
+
+        # Make the figure
+        fig, axs = plt.subplots(1, 4, figsize = (20, 12), 
+            facecolor='k', tight_layout = True, sharex = True, sharey=True)
+
+        # For every channel do this
+        for i in range(4):
+
+            channels = [j for j in range(i, 383, 4)]
+            to_plot = pd.DataFrame()
+            for channel in channels:
+                to_plot[channel] = self.data.get_waveform(spikes, 
+                    channel = channel, average = True, sample = sample_n, 
+                    window = window)
+
+            # Deal with the offset
+            offset = 0.5 * self.data.clusters.Amplitude.loc[unit]
+            offseter = np.linspace(0, to_plot.shape[1]*offset, to_plot.shape[1])
+            to_plot = to_plot + offseter
+
+            # Update the axis
+            correction = ((len(to_plot)/2)-1)/(len(to_plot)/2)
+            to_plot.index = np.linspace(-window, correction*window, len(to_plot))
+
+            # Plot
+            to_plot.plot(linewidth=0.5, legend=False, color='w', ax=axs[i])
+            axs[i].set_facecolor('k')
+            axs[i].tick_params(axis='x', colors='w')
+            axs[i].set_xlabel('Time (ms)', color='w')
+            axs[i].set_yticks([])
+
+        # Final formatting
+        axs[0].set_ylabel('Channels', color='white')
+
+        return fig, axs
+
+
     def plot_3D(self, units=None, channels=None,
                 attribute_function=atf._calc_amplitude):
         """
@@ -290,10 +416,40 @@ class pks_plotting:
         _ = [i.change_channel(index, new_channel)
              for i in self.data.linked_plots]
 
-    def focus_unit(self, unit_id):
+    def add_timestamps(self, stamps):
+        """
+        Will add timestamps to the plots that allow this
+
+        paramters
+        ---------
+        stamps: np.ndarray pd.DataFrame or list
+            List of stamps (in sec)
+            If you input a Pandas DataFrame, it will look for a column "Start""
+        """
+
+        # Check the timestamps
+        if stamps.__class__ == pd.DataFrame:
+            stamps = stamps.Start.values
+
+        # Are they really in seconds (not ms)
+        if max(stamps) > 100000:
+            ans = input("Did you input stamps in ms instead of s? (y/n) ")
+            if ans == 'y':
+                stamps = stamps/1000
+
+        _ = [i.add_timestamps(stamps) for i in self.data.linked_plots]
+
+    def focus_unit(self, unit_id, show_neighbors = None):
         """
         Will update all plots to just show one unit on the most appropriate
         channels.
+
+        parameters
+        ----------
+        unit_id: int
+            The unit you are interested in
+        show_neighbors : None or Float
+            If not None, will plot neighbors with similarity > this number [0, 1]
         """
 
         # Are there any plots?
@@ -326,9 +482,14 @@ class pks_plotting:
         self.add_unit(unit_id)
 
         # Display the neighbors
-        print('On the same channel there are:')
-        print(self.data.sort.neighbors(unit_id, 1))
+        neighbors = self.data.sort.neighbors(unit_id, 3)
+        print('These neurons are close:')
+        print(neighbors)
 
+        # Add neighbors tot he plot
+        if not show_neighbors is None:
+            indexer = neighbors[neighbors.similarity>show_neighbors].index.values
+            self.add_unit(indexer)
 
     def _plot_waveform(self, data, ax=None, color='red'):
         """
@@ -494,6 +655,9 @@ class plot_object:
             # Add the unit
             self.units.append(unit)
 
+        # Rescale axis if required
+        self._rescale_axes()
+
         # Add (update) the legend
         self._add_legend()
 
@@ -531,6 +695,9 @@ class plot_object:
         # Update the legend
         self._add_legend()
 
+        # Rescale axis if required
+        self._rescale_axes()
+
     def change_channel(self, index, new_channel):
 
         # Update the channel list
@@ -560,6 +727,13 @@ class plot_object:
 
         for i, channel in enumerate(channels):
             self.change_channel(i, channel)
+
+    def add_timestamps(self, stamps):
+        """
+        Some plots (e.g. peri-event histograms and time plots) will let you plot
+        timestamps
+        """
+        pass
 
     def update(self, unit):
         """
@@ -684,6 +858,9 @@ class plot_object:
         """
 
         self.event = event
+
+    def _rescale_axes(self):
+        pass
 
 
 class plot_3D(plot_object):
@@ -1109,6 +1286,20 @@ class waveform_plot(plot_object):
         ax = self.axs[axes_X]
         ax.set_title(f'Channel: {chan}')
 
+    def _rescale_axes(self):
+
+        # figure out the max amplitude
+        max_amp = 0
+        for i in self.units:
+            amp = self.data.clusters.loc[i].Amplitude
+            if amp>max_amp:
+                max_amp = amp
+
+        # Rescale
+        #current_lim = self.axs[0].get_ylim()
+        new_lim = (1.8 * -1*max_amp, 1.3*max_amp)
+        self.axs[0].set_ylim(new_lim)
+
 
 class time_plot(plot_object):
     """
@@ -1136,6 +1327,15 @@ class time_plot(plot_object):
         plt.suptitle('Amplitude in time')
 
         return fig
+
+    def add_timestamps(self, stamps):
+        """
+        Will add timestamps to the plot
+        """
+
+        for ax in self.axs:
+            ylim = ax.get_ylim()
+            ax.vlines(stamps, ylim[0], ylim[1], linestyle='--', color='k', linewidth=0.1, alpha=0.8)
 
     def _get_plot_data(self, spikes_or_unit, channel):
 
@@ -1176,6 +1376,7 @@ class time_plot(plot_object):
         ax = self.axs[axes_X]
         ax.set_ylabel(f'Channel: {self.channels[axes_X]}')
         ax.set_yticks([])
+
 
 class peri_event_plot(plot_object):
     """

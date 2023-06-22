@@ -610,6 +610,9 @@ class pks_dataset:
         temp, _ = self._build_channel_list()
         self.clusters.loc[:, 'mainChannel'] = temp
 
+        # Where we will mark if units are done
+        self.clusters['done'] = False
+
         # Add channel_map
         temp = np.load(self.path + 'channel_positions.npy')
         self.channel_positions = pd.DataFrame(temp, columns=['X', 'Y'])

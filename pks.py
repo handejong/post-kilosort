@@ -1,24 +1,46 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+When run by itself, this file will:
 
+    1. Load the selected dataset
+    2. Plot some example plots
 
-Last Updated: Nov 11 14:01:20 2022
+You can fully customize your requested plot or write your own clustering routine below.
+For an example of how I work with PKS, see "pks_han.py" in the same repository.
 
+Example:
+--------
+Navigate to the folder with your data
+(this data needs to be previously clustered using Kilosort 3.0)
+    
+    $cd ~/data/folder
+
+Run pks on that folder
+(Suppose you downloaded pks to a folder named 'Git')
+
+    $python -i ~/Git/PKS/pks.py .
+
+The '.' indicates you want to run PKS on the current folder
+
+TIP:
+----
+Add pks as an alias to you .bashrc like so:
+
+>>> alias pks="ipython -i /home/han/Git/post-kilosort/pks.py"
+
+Now you can run it from any folder by just typing "pks .""
+
+Last Updated: Jun 27 16:24:20 2023
 @autor: Han de Jong
 """
 
-
-"""
-Find the path to this file and work with it.
-
-I use this so I can keep all PKS files in a Github folder and use
-a simple system alias to call is when I'm inside a folder with data.
-
-For instance:
-alias pks="ipython -i /home/han/Git/post-kilosort/pks.py"
-"""
+# Imports
 import sys
+import os
+import seaborn as sns
+
+# We need to find the filepath to PKS
 this_file = __file__
 pks_path = this_file[:-this_file[-1:0:-1].find('/')]
 sys.path.append(pks_path + 'src/')
@@ -27,13 +49,15 @@ sys.path.append(pks_path + 'src/')
 from pks_processing import pks_dataset
 import matplotlib.pyplot as plt
 
+# Print a little welcome message
 def welcome_message():
 
     print(' ')
     print(f"{' Welcome to Post-Kilosort ':*^100}")
     print(' ')
 
-
+############################# BELOW IS WHERE YOU CUSTOMIZE PKS #############################
+# Feel free to remove or add things
 if __name__ == '__main__':
 
     # Setup interactive plotting
@@ -63,7 +87,6 @@ if __name__ == '__main__':
     channels = list(range(s_chan, s_chan+6))
 
     # Make some plots as an example
-    # NOTE these plots are also all stored in data.linked_plots!
     waveform_plot = data.plot.waveform(units, channels)
 
     # NOTE: if you don't specify units or channels, they will be infered from the oldes open plot:
@@ -72,5 +95,27 @@ if __name__ == '__main__':
     # PCA plot plots' the first principal component. It's one of my favorites.
     pca_plot = data.plot.pca()
 
-    # Plot a welcome message
+    # Print a welcome message
     welcome_message()
+
+    # Maybe you have timestamps in a logAI file?
+    if False:
+        # Plot peri-event plots from AI_2 (or any other analog input)
+        try:
+            stamps = data.get_nidq(); stamps = stamps[stamps.Channel=='AI_2']
+            peri_start = data.plot.peri_event(stamps = stamps.Start.values/1000)
+        except:
+            print('Unable to plot peri-event plots for NIDQ channel AI_2')
+    
+    # Make some shortlinks in the base workspace
+    focus = data.plot.focus_unit
+    todo = data.sort.todo
+    delete = data.sort.delete_unit
+    done = data.sort.mark_done
+    add = data.plot.add_unit
+    remove = data.plot.remove_unit
+
+    
+
+
+

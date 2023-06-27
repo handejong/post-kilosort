@@ -158,6 +158,7 @@ class pks_dataset:
         spikes = spikes.astype(int)
 
         # Are we sampling?
+        # Note that sampling is not random but instead uniform
         if sample is not None and len(spikes) > sample:
             spikes = spikes[::len(spikes) // sample]
             if len(spikes)>sample:
@@ -236,7 +237,8 @@ class pks_dataset:
 
         return self.spikeTimes[self.spikeID == unit]
 
-    def channel_pca(self, channel: int, units=[], n_components: int = 1):
+    def channel_pca(self, channel: int, units=[], n_components: int = 1,
+        sample_size = 1000):
         """
         Does a principal component (PCA) analysis on one channel. The waveforms 
         that are used to do the PCA over are either the waveforms indicated
@@ -245,7 +247,7 @@ class pks_dataset:
         channel.
 
         Note: not all data is loaded to do the PCA over, instead a sample of
-        1000 waveforms is used.
+        1000 waveforms is used. (Unless you set sample_size)
 
         Parameters
         ----------
@@ -256,6 +258,8 @@ class pks_dataset:
             waveforms.
         n_components : int, optional
             The number of components
+        sample_size : int, optional
+            The number of waveforms used to fit the PCA
 
         Returns
         -------
@@ -282,7 +286,7 @@ class pks_dataset:
         spikes = np.array(spikes)
 
         # Get the waveforms
-        waveforms = self.get_waveform(spikes, channel, sample=1000,
+        waveforms = self.get_waveform(spikes, channel, sample=sample_size,
                                       average=False)
 
         # Do the pca
@@ -435,6 +439,35 @@ class pks_dataset:
 
         return output
 
+    def undo(self):
+        """
+        Will delete the last line in ChangeSet
+
+        TODO: will also undo the last manipulation.
+
+        CURRENTLY NOT IMPLEMENTED
+        """
+
+        # Filepath
+        file_path = self.path + 'pks_data/changeSet.py'
+
+        with open(file_path, 'r+') as file:
+            lines = file.readlines()
+            if lines:
+                outtake = lines[-1]
+                print('Removing:')
+                print(outtake)
+                lines = lines[:-1]  # Exclude the last line
+
+                # Move the file cursor to the beginning and truncate the file
+                file.seek(0)
+                file.truncate()
+
+                # Rewrite the modified lines
+                file.writelines(lines)
+                print("Last line deleted and file saved successfully.")
+            else:
+                print("File is empty.")
 
     def _infer_unit_channels(self, units, channels):
         """
@@ -593,11 +626,13 @@ class pks_dataset:
         clusters = [self._load_tsv(self.path + file) for file in files]
         self.clusters = pd.concat(clusters, axis=1)
 
-        # Load all spike times
+        # Load all spike times, spikeID and spike Amplitude
         self.spikeTimes = np.load(
             self.path + 'spike_times.npy').ravel().astype(int)
         self.spikeID = np.load(
             self.path + 'spike_clusters.npy').ravel().astype(int)
+        self.spikeAmp = np.load(
+            self.path + 'amplitudes.npy').ravel().astype(int)
 
         # Add the Spike count to the data
         for i in self.clusters.index:

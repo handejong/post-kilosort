@@ -78,7 +78,7 @@ class sorter:
         self.update_plots_remove(unit_1)
         self.update_plots(unit_2)
 
-    def split_unit(self, unit, channels, k = 2):
+    def split_unit(self, unit, channels = None, k = 2):
         """
         SPLIT_UNIT will split a unit using k-means clustering with k clusters.
 
@@ -99,9 +99,8 @@ class sorter:
 
         """
 
-        # Input cleaning
-        if channels.__class__ == int:
-            channels = [channels]
+        # Infer channels
+        _, channels = self.data._infer_unit_channels(unit, channels)
     
         # Get the unit spikes
         spikes = self.data.get_unit_spikes(unit)
@@ -147,6 +146,9 @@ class sorter:
         # Execute
         if ans == 'y':
 
+            # Get the old index
+            old_index = self.data.clusters.index
+
             # Save the split
             name = f'unit_{unit}_k-means_{k}_{self._timestamp()}.npy'
             self._save_split(labels, name)
@@ -154,8 +156,18 @@ class sorter:
             # Execute split
             self._execute_split(unit, name)
 
+            # Get any new units
+            new_units = [i for i in self.data.clusters.index if i not in old_index]
+
+            # Update any open plots
+            self.data.plot.remove_unit(unit)
+            self.data.plot.add_unit(unit)
+            for new_unit in new_units:
+                self.data.plot.add_unit(new_unit)
+
         # Close the figure
         plt.close(fig)
+
 
     def translate(self, unit, offset):
 

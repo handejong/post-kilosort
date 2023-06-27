@@ -2,26 +2,28 @@
 # -*- coding: utf-8 -*-
 """
 
+This is just an example of how I work with PKS. I particularly like my
+semi-automated clustering routines:
 
-Last Updated: Nov 11 14:01:20 2022
+    - next()
+    - auto_next()
+    - han_super_auto()
+
+In order to put the figures at specific locations on my desktop I use
+a window manger called 'I3'.
+
+
+Last Updated: Jun 27 16:40:34 2023
 
 @autor: Han de Jong
 """
 
-
-"""
-Find the path to this file and work with it.
-
-I use this so I can keep all PKS files in a Github folder and use
-a simple system alias to call is when I'm inside a folder with data.
-
-For instance:
-alias pks="ipython -i /home/han/Git/post-kilosort/pks.py"
-"""
+# Imports
 import sys
 import os
 import seaborn as sns
 
+# We need to find the filepath to PKS
 this_file = __file__
 pks_path = this_file[:-this_file[-1:0:-1].find('/')]
 sys.path.append(pks_path + 'src/')
@@ -30,16 +32,18 @@ sys.path.append(pks_path + 'src/')
 from pks_processing import pks_dataset
 import matplotlib.pyplot as plt
 
+# Welcome message
 def welcome_message():
 
     print(' ')
     print(f"{' Welcome to Post-Kilosort ':*^100}")
     print(' ')
 
-
+# This function will focus the terminal
 def go_back_to_terminal():
     string = r' i3-msg "[class=\"Gnome-terminal\"] focus " > /dev/null 2>&1'
     os.system(string);   
+
 
 if __name__ == '__main__':
 
@@ -104,27 +108,33 @@ if __name__ == '__main__':
     delete = data.sort.delete_unit
     done = data.sort.mark_done
     add = data.plot.add_unit
+    remove = data.plot.remove_unit
 
-    # Put it all somewhere cool
+    # Put it all somewhere cool using I3
+
     # Waveforms
     string = r' i3-msg "[title=\"Figure 1\"] focus" > /dev/null 2>&1'
     os.system(string)
     for i in range(4):
         os.system("i3-msg move left > /dev/null 2>&1")
+
     # Peri_event start
     string = r' i3-msg "[title=\"Figure 4\"] focus" > /dev/null 2>&1'
     os.system(string)
     for i in range(5):
         os.system("i3-msg move left > /dev/null 2>&1")
+
     # Peri_event stop
     string = r' i3-msg "[title=\"Figure 5\"] focus" > /dev/null 2>&1'
     os.system(string)
     for i in range(5):
         os.system("i3-msg move left > /dev/null 2>&1")
+
     # Peri_event start again
     string = r' i3-msg "[title=\"Figure 4\"] focus" > /dev/null 2>&1'
     os.system(string)
     os.system("i3-msg move up > /dev/null 2>&1")
+    
     # Waveforms again
     string = r' i3-msg "[title=\"Figure 1\"] focus" > /dev/null 2>&1'
     os.system(string)
@@ -156,16 +166,114 @@ if __name__ == '__main__':
     go_back_to_terminal()
 
 
-################################# Han cluster helper ##############################################
+################################# Han cluster helper #################################
+
+# This function will force Matplotlib to update all included figures
 def update_all_plots():
     for fig in [waveform_plot, pca_plot, amplitude_plot, peri_stop, peri_start]:
         plt.figure(fig.fig)
         plt.draw()
 
+# This function will focus on the next unit I should work on and then compare it
+# to all neighboring units.
 def next():
-    i = data.sort.todo().index[0]
-    data.plot.focus_unit(i, show_neighbors=0.8)
+    unit_id = int(data.sort.todo().index[0])
+    data.plot.focus_unit(unit_id)
+    neighbors = data.sort.neighbors(unit_id, 3)
+    maybe = []
+    for i in neighbors.index:
+        if i == unit_id:
+            continue
+        add(i)
+        update_all_plots()
+        go_back_to_terminal()
+        print(' ')
+        print(neighbors.loc[[unit_id, i], :])
+        answer = input("Is this the same unit? (y/n/m/d/c): ")
 
+        # Does the user want to see the correlogram?
+        if answer == 'c':
+            fig = data.plot.correlogram()
+            go_back_to_terminal()
+            answer = input("Is this the same unit? (y/n/m/d): ")
+            plt.close(fig)
+
+        # Do we delete this unit
+        if answer == 'd':
+            delete(i)
+            continue
+
+        # Merge them?
+        if answer == 'y':
+            data.sort.merge_units(i, unit_id)
+            continue
+
+        # Not the same unit
+        if answer == 'n':
+            remove(i)
+            continue
+
+        # Maybe?
+        if answer == 'm':
+            remove(i)
+            maybe.append(i)
+            continue
+
+        # If you get here, abort
+        print(f'Unknown input: {answer}')
+        return
+
+    # Print an overview of the "maybe" units
+    if len(maybe)>0:
+        print(' ')
+        print('Have a look at these units: ')
+        print(neighbors.loc[maybe, :])
+
+# This function basically allows me to cluster an entire dataset. The only thing
+# that I have to do sometimes is drop out (keep pressing 'q') in order to translate
+# or split units or do some more detailed inspection (e.g. look at raw waveform
+# samples).
+def auto_next():
+
+    exit = False
+
+    while not exit:
+
+        found_good_unit = False
+        while not found_good_unit:
+            unit_id = int(data.sort.todo().index[0])
+            focus(unit_id)
+            fig = data.plot.ISI(unit_id)
+            update_all_plots()
+            go_back_to_terminal()
+            answer = input('Should we delete this unig? yes/n: ')
+            plt.close(fig)
+            if answer == 'yes':
+                delete(unit_id)
+                continue
+            found_good_unit = True
+
+        # Compare this unit to all it's neighbors (yes all of them)
+        next()
+        update_all_plots()
+        go_back_to_terminal()
+        print(' ')
+        print(f"{' Unit done? ':*^100}")
+        answer = input('y/n/q/i: ')
+
+        if answer == 'i':
+            fig = data.plot.ISI(unit_id)
+            print(f"{' Unit done? ':*^100}")
+            go_back_to_terminal()
+            answer = input('y/n/q: ')
+            plt.close(fig)
+
+        if answer == 'y':
+            done(unit_id)
+        if answer == 'q':
+            exit = True
+
+# This function will plot both the raw_unit sample and the ISI of a unit.
 def details(unit):
 
     # Plot raw waveforms
@@ -174,6 +282,8 @@ def details(unit):
     # Plot the ISI
     data.plot.ISI(unit)
 
+# This function allows me to quickly get rid of a large number of "MUA"
+# units.
 def han_super_auto(data):
 
     # First plot overview of the entire dataset
@@ -212,7 +322,8 @@ def han_super_auto(data):
             elif check == 'q':
                 return -1
             plt.close(temp)
-    return None    
+
+    return  
 
 
 

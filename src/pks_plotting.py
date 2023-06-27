@@ -6,27 +6,42 @@ The functions below are all used for plotting and visualization of Kilosort
 output data.
 
 This functions provide a general overview of the dataset:
-    
     - overview (not implemented yet)
     - probe_view (not implemented yet)
     
 These function are used to inspect the unit waveforms. 
-
     - waveform: used to plot waveforms
     - pca: used to plot the first principal component of the waveform
     - amplitude: used to plot the amplitude in time
     - inspect: all three of the above plus the correlograms.
+    - plot_3D: will plot 
 
 Run them by calling:
     
     >>> function(self, list_of_units, list_of_channels)
+
+This is a nice way to look at individual (raw) waveforms
+    - raw_spike sample
+
+For instance, this will plot 25 (uniformly selected) waveforms
+of unit 4 on channel 3, 4 and 5.
+
+    >>> dataset.plot.raw_spike_sample(4, [3, 4, 5], sample_n = 25)
+
+Sometimes you want to see what a unit looks like on ALL channels
+    - raw_unit_sample
+
+This will plot either a single waveform of unit 4 or the average of
+1000 waveforms on all channels
+
+    >>> raw_unit_sample(4, sample_n = 1)
+    >>> raw_unit_sample(4, sample_n = 1000)
     
 for instance, this will plot the waveforms of unit 3 and 4 on electrode 0-5:
         
     >>> dataset.plot.waveform([3, 4], [0, 1, 2, 3, 4, 5]) 
     
-Finally there are functions to look at firing distribution:
-    
+There are functions to look at firing distribution: 
     - correlogram
     - ISI
     
@@ -34,8 +49,34 @@ Run them by calling:
     
     >> function(self, list_of_units)
 
+This function deals with peri-even histograms
+    - peri_event
+
+For instance, this will make the PEH around where T=0 are the
+timepoints in 'stamps' of unit 3 and unit 4.0
+
+    >>> dataset.plot.peri_event([3, 4], stamps)
+
+Finally there are functions that give an overview of the complete dataset
+    - spike_raster
+    - cluster_progress TODO
+
+Some (most) plots allow you to add or remove units or to change channels
+or add timestamps. You can do this to individual plots or you can do this
+to all plots that are currently open simulateneously as follows:
+
+    >>> dataset.plot.add_unit(5) # Will add unit 5 to all plots
+    >>> dataset.plot.remove_unit(5) # Will remove unit 5 from all plots
+    >>> dataset.plot.add_timestamps(stamps) # Will add timestamps
+    >>> dataset.plot.change_channel(1, 3) # Will change the subplot at index 3 to channel 3
+
+ This line will focus all plots on unit 5. It will pick the best channels and only show
+ neighboring units if they have at least 0.9 similarity with unit 5.
+
+    >>> dataset.plot.focus(5, show_neighbors=0.9)
+
 Created: Fri Nov  4 12:21:50 2022
-Last Updated: Nov 11 14:01:20 2022
+Last Updated: Jun 23 10:42:11 2023
 
 @author: Han de Jong
 """
@@ -45,10 +86,14 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
+from matplotlib import rcParams
 import seaborn as sns
 import pks_attribute_functions as atf
 from mpl_toolkits import mplot3d
+from functools import partial
 
+# Settings
+rcParams['toolbar'] = 'None'
 
 class pks_plotting:
 
@@ -57,10 +102,12 @@ class pks_plotting:
         # Store the datset itself
         self.data = pks_dataset
 
-        # Store parameters that may or may not be used
+        # Store formatting parameters that may or may not be used
         self.plot_max = 250
         self.palette = "tab10"  # hls is unclear, but looks good.
         self.colormap = self._color_map(10)
+        self.facecolor = 'k'
+        self.axcolor='w'
 
     def waveform(self, units=None, channels=None):
         """
@@ -163,11 +210,27 @@ class pks_plotting:
         """
         return peri_event_plot(self, units=units, channels=[1, 2, 3], other_data=stamps)
 
-    def custom_plot(self, units, channels, type='time_plot', attribute_function=None):
+    def custom_plot(self, units=None, channels=None, type='time_plot', 
+        attribute_function=None):
         """
-        Write an explanation about cutom_plots and attribute functions.
-        """
+        You can use this function to plot any particular waveform attribute in two ways
 
+            - time_plot: Where X is the time (in s) and Y the amplitude
+            - attribute_plot: Where X and Y are attributes on different channels
+
+        Have a look at the pks_attribute_functions to see how they should be formatted
+
+        Example:
+
+            >>> self.plot.custom_plot(units = [0, 1, 13], 
+                                      channels = [1, 2, 13], 
+                                      type='attribute_plot', 
+                                      attribute_function=atf._calc_amplitude)
+
+        This will plot a 3x3 grid of scatter plots with the amplitude of
+        the waveforms of unit 0, 1 & 13 on channel 1, 2 13.
+
+        """
         if type == 'time_plot':
             try:
                 return time_plot(self, units, channels, attribute_function)
@@ -198,8 +261,8 @@ class pks_plotting:
 
         Returns
         -------
-        ax : TYPE
-            DESCRIPTION.
+        fig : matplotlib figure
+            Handle to the figure
 
         """
 
@@ -249,6 +312,8 @@ class pks_plotting:
 
         # Finaly formatting
         plt.suptitle('Correlogram')
+
+        return fig
 
     def raw_spike_sample(self, unit, channels, sample_n = 25, window = 3):
         """
@@ -374,7 +439,6 @@ class pks_plotting:
 
         return fig, axs
 
-
     def plot_3D(self, units=None, channels=None,
                 attribute_function=atf._calc_amplitude):
         """
@@ -391,6 +455,76 @@ class pks_plotting:
 
         return plot_3D(self, units, channels, attribute_function)
 
+    def spike_raster(self, sample = 100000):
+        """
+        Will plot a uniformly sampled selection of 'sample' spike from
+        the dataset. The color refers to the spike amplitude.
+
+        """
+        # Grab the data
+        spikeID = self.data.spikeID
+
+        # Only interested in spikes that have not been drown out
+        indexer = np.zeros(spikeID.shape).astype(bool)
+        for i in self.data.clusters.index:
+            indexer[spikeID==i] = True
+
+        # Clean
+        spikeID = spikeID[indexer]
+        spikeTimes = self.data.spikeTimes[indexer]
+        spikeAmp = self.data.spikeAmp[indexer]
+
+        # Sample
+        if sample<len(spikeID):
+            spikeID = spikeID[::len(spikeID)//sample]
+            spikeTimes = spikeTimes[::len(spikeTimes)//sample]
+            spikeAmp = spikeAmp[::len(spikeAmp)//sample]
+        spikeTimes = spikeTimes/float(self.data.metadata['imSampRate'])
+
+        # Get the channel
+        channel = spikeID.copy()
+        for i in np.unique(spikeID):
+            channel[spikeID==i] = self.data.clusters.loc[i].mainChannel
+
+        # Make random permutations of the spikeID
+        random = np.random.permutation(np.unique(spikeID))
+        rand_spikeID = spikeID.copy()
+        for i, val in enumerate(random):
+            rand_spikeID[spikeID==val] = i
+
+        # Plot
+        fig, axs = plt.subplots(1, 4, figsize = [20, 10], tight_layout = True,
+            sharex = True, sharey = True, facecolor = 'k')
+        for i in range(1, 5):
+            indexer = (channel-i)%4==0
+            axs[i-1].scatter(x=spikeTimes[indexer], 
+                y=channel[indexer], c=spikeAmp[indexer],
+                vmin=spikeAmp.mean()-2*spikeAmp.std(), 
+                vmax=spikeAmp.mean()+2*spikeAmp.std(), 
+                marker = '|',
+                alpha=0.8,
+                cmap='cool')
+            axs[i-1].set_facecolor('k')
+            axs[i-1].tick_params(axis='x', colors='w')
+            axs[i-1].set_xlabel('Time (s)', color='w')
+        axs[0].tick_params(axis='y', colors='w')
+        axs[0].set_ylabel('Channel #', color='w')
+
+    def cluster_progress(self):
+        """
+        Quick overview of the dataset.
+
+        """
+
+        # First plot overview of the entire dataset
+        plt.figure(figsize=(9, 9), tight_layout = True)
+        sns.scatterplot(x='Amplitude', y='mainChannel', size='spikeCount', 
+            hue='KSLabel', data=self.data.clusters)
+        done = self.data.clusters.loc[self.data.clusters.done, :]
+        sns.scatterplot(x='Amplitude', y='mainChannel', size='spikeCount', 
+            hue='KSLabel', edgecolor='red', data=done, linewidth=2, 
+            legend=False)
+
     def add_unit(self, unit):
 
         # Add the unit to each plot
@@ -406,7 +540,6 @@ class pks_plotting:
         Move up one channel for all plots
 
         """
-
         # Grab channels
         _ = [i.roll(n) for i in self.data.linked_plots]
 
@@ -416,7 +549,7 @@ class pks_plotting:
         _ = [i.change_channel(index, new_channel)
              for i in self.data.linked_plots]
 
-    def add_timestamps(self, stamps):
+    def add_timestamps(self, stamps, color='orange'):
         """
         Will add timestamps to the plots that allow this
 
@@ -437,7 +570,7 @@ class pks_plotting:
             if ans == 'y':
                 stamps = stamps/1000
 
-        _ = [i.add_timestamps(stamps) for i in self.data.linked_plots]
+        _ = [i.add_timestamps(stamps, color) for i in self.data.linked_plots]
 
     def focus_unit(self, unit_id, show_neighbors = None):
         """
@@ -484,7 +617,7 @@ class pks_plotting:
         # Display the neighbors
         neighbors = self.data.sort.neighbors(unit_id, 3)
         print('These neurons are close:')
-        print(neighbors)
+        print(neighbors.sort_values('similarity', ascending = False))
 
         # Add neighbors tot he plot
         if not show_neighbors is None:
@@ -569,6 +702,8 @@ class plot_object:
         # Store data and handles
         self.plotter = plot_object
         self.data = plot_object.data
+        self.facecolor = plot_object.facecolor
+        self.axcolor = plot_object.axcolor
         self.plot_handles = {}
         self.units = []
         self.colors = []
@@ -728,7 +863,7 @@ class plot_object:
         for i, channel in enumerate(channels):
             self.change_channel(i, channel)
 
-    def add_timestamps(self, stamps):
+    def add_timestamps(self, stamps, color):
         """
         Some plots (e.g. peri-event histograms and time plots) will let you plot
         timestamps
@@ -862,6 +997,44 @@ class plot_object:
     def _rescale_axes(self):
         pass
 
+    def _default_formatting(self, ax):
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.set_facecolor(self.facecolor)
+        ax.spines['left'].set_color(self.axcolor)
+        ax.spines['bottom'].set_color(self.axcolor)
+        ax.xaxis.label.set_color(self.axcolor)
+        ax.yaxis.label.set_color(self.axcolor)
+        ax.tick_params(colors=self.axcolor)
+        ax.title.set_color(self.axcolor)
+
+    def _onscroll(self, event, x_axis = False):
+        # Will attempt to reset the Y axis only
+
+        # Let's see if we can find the axes
+        ax = event.inaxes
+
+        xdata = event.xdata
+        ydata = event.ydata
+        if xdata is not None and ydata is not None:
+            xlim = ax.get_xlim()
+            ylim = ax.get_ylim()
+
+        xcenter = ((xlim[1] + xlim[0]) / 2 - xdata) / (xlim[1] - xlim[0])
+        ycenter = ((ylim[1] + ylim[0]) / 2 - ydata) / (ylim[1] - ylim[0])
+
+        if event.button == 'up':
+            ax.set_ylim(ylim[0] * 0.9 - ycenter * (ylim[1] - ylim[0]) * 0.1, ylim[1] * 0.9 - ycenter * (ylim[1] - ylim[0]) * 0.1)
+            if x_axis:
+                ax.set_xlim(xlim[0] * 0.9 - xcenter * (xlim[1] - xlim[0]) * 0.1, xlim[1] * 0.9 - xcenter * (xlim[1] - xlim[0]) * 0.1)
+        else:
+            ax.set_ylim(ylim[0] * 1.1 - ycenter * (ylim[1] - ylim[0]) * 0.1, ylim[1] * 1.1 - ycenter * (ylim[1] - ylim[0]) * 0.1)
+            if x_axis:
+                ax.set_xlim(xlim[0] * 1.1 - xcenter * (xlim[1] - xlim[0]) * 0.1, xlim[1] * 1.1 - xcenter * (xlim[1] - xlim[0]) * 0.1)
+
+
+        plt.draw()
+
 
 class plot_3D(plot_object):
 
@@ -873,8 +1046,9 @@ class plot_3D(plot_object):
     def make_figure(self):
 
         # TODO allow for multiple axes
-        fig = plt.figure(tight_layout=True)
-        ax = plt.axes(projection='3d')
+        fig = plt.figure(tight_layout = True, facecolor = self.facecolor)
+        ax = plt.axes(projection = '3d', facecolor = self.facecolor)
+        self._default_formatting(ax)
 
         # Label axes
         ax.set_xlabel(f'Channel: {self.channels[0]}')
@@ -989,15 +1163,19 @@ class attribute_plot(plot_object):
         # Make the figure
         n_channels = len(self.channels)
         fig, axs = plt.subplots(figsize=[10, 10], nrows=n_channels,
-                                ncols=n_channels, tight_layout=True)
+                                ncols=n_channels, tight_layout=True,
+                                facecolor=self.facecolor)
+        onscroll = partial(self._onscroll, x_axis=True)
+        fig.canvas.mpl_connect('scroll_event', onscroll)
 
-        # Share X and Y, but not on the diagonal
-        for x in range(n_channels):
-            for y in range(n_channels):
-                if x == y:
-                    continue
-                axs[x, y].sharex(axs[0, 1])
-                axs[x, y].sharey(axs[0, 1])
+        # # Share X and Y, but not on the diagonal
+        # for x in range(n_channels):
+        #     for y in range(n_channels):
+        #         if x == y:
+        #             continue
+        #         axs[x, y].sharex(axs[0, 1])
+        #         axs[x, y].sharey(axs[0, 1])
+        #         axs[x, y].set_facecolor(self.facecolor)
 
         # Formatting
         for i, ax in enumerate(axs[0, :]):
@@ -1007,6 +1185,7 @@ class attribute_plot(plot_object):
         for ax in axs.ravel():
             ax.set_xticks([])
             ax.set_yticks([])
+            self._default_formatting(ax)
 
         # Add keypresses to the axis?
 
@@ -1024,7 +1203,7 @@ class attribute_plot(plot_object):
         for unit in units:
             # Check if unit is not allready in there
             if unit in self.units:
-                return None
+                continue
 
             # Figure out color
             color = self._get_color()
@@ -1172,6 +1351,7 @@ class pca_plot(attribute_plot):
                 self.other_data[i].components_.transpose())
             self.axs[i, i].set_xticks([])
             self.axs[i, i].set_yticks([])
+            self.axs[i, i].set_facecolor(self.facecolor)
         self.axs[0, 0].set_title(f'Channel: {self.channels[0]}')
         self.axs[0, 0].set_ylabel(f'Channel: {self.channels[0]}')
         self._add_legend()
@@ -1243,11 +1423,14 @@ class waveform_plot(plot_object):
         rows = int(len(self.channels)/cols)
         fig, axs = plt.subplots(figsize=[4*cols, 4*rows], nrows=rows,
                                 ncols=cols, tight_layout=True, sharex=True,
-                                sharey=True)
+                                sharey=False, facecolor=self.facecolor)
         axs = axs.ravel()
+        fig.canvas.mpl_connect('scroll_event', self._onscroll)
 
         # Store the axes handles
         self.axs = axs
+        for ax in axs:
+            self._default_formatting(ax)
 
         # Add titles to the axe
         for i, chan in enumerate(self.channels):
@@ -1315,27 +1498,28 @@ class time_plot(plot_object):
         n_channels = len(self.channels)
         fig, axs = plt.subplots(figsize=[10, 12], nrows=n_channels,
                                 ncols=1, tight_layout=True, sharex=True,
-                                sharey=True)
+                                sharey=False, facecolor=self.facecolor)
         axs = axs.ravel()
         axs[-1].set_xlabel('Time (s)')
         self.axs = axs
+        fig.canvas.mpl_connect('scroll_event', self._onscroll)
 
         # Formatting
         for i, ax in enumerate(axs):
             self._label_plot(i)
-
-        plt.suptitle('Amplitude in time')
+            self._default_formatting(ax)
 
         return fig
 
-    def add_timestamps(self, stamps):
+    def add_timestamps(self, stamps, color='orange'):
         """
         Will add timestamps to the plot
         """
 
         for ax in self.axs:
             ylim = ax.get_ylim()
-            ax.vlines(stamps, ylim[0], ylim[1], linestyle='--', color='k', linewidth=0.1, alpha=0.8)
+            ax.vlines(stamps, ylim[0], ylim[1], linestyle='--', color=color, 
+                linewidth=0.3, alpha=1)
 
     def _get_plot_data(self, spikes_or_unit, channel):
 
@@ -1389,7 +1573,7 @@ class peri_event_plot(plot_object):
         # Make the figure
         fig, axs = plt.subplots(figsize=[10, 12], nrows=2,
                                 ncols=1, tight_layout=True, sharex=True,
-                                sharey=False)
+                                sharey=False, facecolor=self.facecolor)
         axs = axs.ravel()
        
         self.axs = axs
@@ -1400,8 +1584,7 @@ class peri_event_plot(plot_object):
         axs[0].invert_yaxis()
         axs[0].set_ylabel('Trial')
         axs[0].axis('off')
-        axs[1].spines['top'].set_visible(False)
-        axs[1].spines['right'].set_visible(False)
+        self._default_formatting(axs[1])
 
         plt.suptitle('Peri Event Plot')
 

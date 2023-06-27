@@ -25,6 +25,9 @@ def _calc_amplitude(waveforms, other=None):
     Numpy array
         The amplitude of each waveform in the input dataset.
 
+    # NOTE: an easier way to get the spike amplitude is using
+    the build-in property 'spikeAmp'
+
     """
 
     return waveforms.max(axis=1) + -1*waveforms.min(axis=1)

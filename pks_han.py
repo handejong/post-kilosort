@@ -69,6 +69,11 @@ if __name__ == '__main__':
 
     # Let's have a look at the first 5 units of the "todo" dataframe
     temp = data.sort.todo().iloc[:5, :]
+
+    # Maybe this dataset is already completely clustered and todo is empty
+    if len(temp)==0:
+        temp = data.clusters.iloc[:5, :]
+
     units = temp.index.values
     s_chan = max([temp.mainChannel.min()-2, 0])
     channels = list(range(s_chan, s_chan+6))
@@ -161,6 +166,11 @@ if __name__ == '__main__':
     os.system(string)    
     os.system('i3-msg resize grow height 250px > /dev/null 2>&1')
     os.system('i3-msg resize grow width 250px > /dev/null 2>&1')
+
+
+    # Some floating windows on top for quick inspection
+    data.plot.cluster_progress()
+    data.plot.spike_raster()
 
     # Finish up
     go_back_to_terminal()

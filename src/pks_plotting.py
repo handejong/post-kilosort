@@ -1534,6 +1534,7 @@ class time_plot(plot_object):
                                          average=False, sample=self.plotter.plot_max,
                                          return_spikes=True)
         X = X/float(self.data.metadata['imSampRate'])
+        X = X*self.data.sync_time_coefficients[0] + self.data.sync_time_coefficients[1]
         data = self.attribute_function(data)
 
         return data, X
@@ -1615,7 +1616,7 @@ class peri_event_plot(plot_object):
                 continue
 
             # Grab spikes
-            spikes = self.data.get_unit_spikes(unit)/float(self.data.metadata['imSampRate'])
+            spikes = self.data.get_unit_spikes(unit, return_real_time = True)
 
             # Figure out color
             color = self._get_color()

@@ -82,6 +82,10 @@ if __name__ == '__main__':
 
     # Let's have a look at the first 5 units of the "todo" dataframe
     temp = data.sort.todo().iloc[:5, :]
+
+     # Maybe this dataset is already completely clustered and todo is empty
+    if len(temp)==0:
+        temp = data.clusters.iloc[:5, :]
     units = temp.index.values
     s_chan = max([temp.mainChannel.min()-2, 0])
     channels = list(range(s_chan, s_chan+6))
@@ -94,6 +98,9 @@ if __name__ == '__main__':
 
     # PCA plot plots' the first principal component. It's one of my favorites.
     pca_plot = data.plot.pca()
+
+    # Quick overview of the data
+    data.plot.clusters_progress()
 
     # Print a welcome message
     welcome_message()

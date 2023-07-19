@@ -92,8 +92,12 @@ class pks_dataset:
         # Where we will store units that are finished
         self.done = []
 
+        # What we will have to use if we have to recast the timepoints to allign
+        # with external data
+        self.sync_time_coefficients = (1, 0)
+
         # Run the change set
-        # NOTE: it is just a Python scripts. You can put anything you want in
+        # NOTE: it is just a Python script. You can put anything you want in
         # there!
         self.save_data = False
         exec(open(self.path + 'pks_data/changeSet.py').read())
@@ -219,7 +223,7 @@ class pks_dataset:
 
         return template
 
-    def get_unit_spikes(self, unit):
+    def get_unit_spikes(self, unit, return_real_time = False):
         """
         Returns 
 
@@ -235,7 +239,18 @@ class pks_dataset:
 
         """
 
-        return self.spikeTimes[self.spikeID == unit]
+        times = self.spikeTimes[self.spikeID == unit]
+
+        # I have no idea why I wrote this using recursion.
+        if not return_real_time:
+            return times
+
+        # Convert to real time
+        times = times/float(self.metadata['imSampRate'])
+        times = times*self.sync_time_coefficients[0] + self.sync_time_coefficients[1]
+        
+        return times
+
 
     def channel_pca(self, channel: int, units=[], n_components: int = 1,
         sample_size = 1000):
@@ -316,6 +331,7 @@ class pks_dataset:
         save_path = self.path + 'nidq.csv'
         try:
             output = pd.read_csv(save_path).set_index('#')
+            output = self._sync_time(output)
             return output
         except FileNotFoundError:
             print('Deriving stamps from raw signal.')
@@ -370,7 +386,7 @@ class pks_dataset:
         # Save the file
         output.to_csv(save_path)
 
-        return output
+        return self._sync_time(output)
 
     def get_sync_pulses(self):
         """
@@ -444,8 +460,7 @@ class pks_dataset:
         Will delete the last line in ChangeSet
 
         TODO: will also undo the last manipulation.
-
-        CURRENTLY NOT IMPLEMENTED
+                (CURRENTLY NOT IMPLEMENTED)
         """
 
         # Filepath
@@ -468,6 +483,61 @@ class pks_dataset:
                 print("Last line deleted and file saved successfully.")
             else:
                 print("File is empty.")
+
+    def sync_time_to_external(self, NPX_time, external_time):
+        """
+        Sync_time, will sync all timepoints in this object to a set of
+        external timepoints. Essentially you provide a list of timepoints
+        in the current object and the external timepoints to which these
+        should be fit. Sync_time then performs the linear fit:
+
+        external_time = a + b*NPX_time
+
+        The coefficients 'a' and 'b' are then used to recast all timepoints
+        in this object.
+        
+        Parameters
+        ----------
+        NPX_time : np.array or list
+            Serries of timepoints in this object
+        external_time: np.array or list
+            Timepoints collected externally to which this object should be synced
+
+        Returns
+        -------
+        None
+
+        """
+
+        # Check the input arguments
+        if not len(NPX_time) == len(external_time):
+            print('sync_time only works for equal-length time arrays, please see the docstring')
+            return None
+        
+        # Perform the fit
+        p = np.polyfit(NPX_time, external_time, 1)
+        print(f'Polynomal parameters: {p}')
+        
+        # Store the polynomal
+        self.sync_time_coefficients = p
+
+    def _sync_time(self, output):
+        """
+        Responsible for applying the sync coefficients.
+
+        sync coefficients are set by "sync_time". This method is used to allign
+        the output from get_nidq using these coefficients.
+        """
+
+        p = self.sync_time_coefficients
+
+        # Do the actual converting
+        output.Start = output.Start * p[0] + p[1]*1000
+        output.Stop = output.Stop * p[0] + p[1]*1000
+        output.Duration = output.Duration * p[0]
+        output.ITI = output.ITI * p[0]
+
+        return output
 
     def _infer_unit_channels(self, units, channels):
         """

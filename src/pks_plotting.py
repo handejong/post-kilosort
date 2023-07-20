@@ -189,7 +189,7 @@ class pks_plotting:
         """
         return time_plot(self, units, channels, atf._calc_amplitude)
 
-    def peri_event(self, units=None, stamps=None):
+    def peri_event(self, units=None, stamps=None, peri_event_window=(-5.0, 5.0)):
         """
 
         Plot the spikes as events relative 
@@ -208,7 +208,8 @@ class pks_plotting:
             This object controls the behavior of peri-event plot
 
         """
-        return peri_event_plot(self, units=units, channels=[1, 2, 3], other_data=stamps)
+        return peri_event_plot(self, units=units, channels=[1, 2, 3], other_data=stamps,
+            peri_event_window=peri_event_window)
 
     def custom_plot(self, units=None, channels=None, type='time_plot', 
         attribute_function=None):
@@ -696,8 +697,8 @@ class plot_object:
     Main plot_object class, all other plot objects are derived from this class.
     """
 
-    def __init__(self, plot_object, units, channels, attribute_function=None,
-                 other_data=None):
+    def __init__(self, plot_object, units, channels, attribute_function = None,
+                 other_data = None, peri_event_window = (-5.0, 5.0)):
 
         # Store data and handles
         self.plotter = plot_object
@@ -709,6 +710,7 @@ class plot_object:
         self.colors = []
         self.other_data = other_data
         self.update_diagonal = True
+        self.peri_event_window = peri_event_window
 
         # Figure out what attribute function to use
         if not attribute_function is None:
@@ -1623,7 +1625,8 @@ class peri_event_plot(plot_object):
             self.colors.append(color)
 
             # Draw the unit
-            event_data, hist, bins = self._get_plot_data(spikes, self.other_data)
+            event_data, hist, bins = self._get_plot_data(spikes, self.other_data,
+                self.peri_event_window)
             self._add_unit_to_axes(event_data, hist, bins, color)
 
             # Add the unit
@@ -1704,7 +1707,7 @@ class peri_event_plot(plot_object):
         # Delete the histogram
         hist_handle.remove()
 
-    def _get_plot_data(self, spikes_or_unit, stamps):
+    def _get_plot_data(self, spikes_or_unit, stamps, peri_event_window):
 
         # Grab spikes
         if (spikes_or_unit.__class__ == int) | (spikes_or_unit.__class__ == str) | (spikes_or_unit.__class__ == np.int64):
@@ -1712,9 +1715,10 @@ class peri_event_plot(plot_object):
         else:
             spikes = spikes_or_unit
 
-        # Might make this more flexible later
+        # Figure out the window and bin width
         bin_size = 0.1
-        peri_event_window=(-5.0, 5.0)
+        if bin_size > 0.5 * (abs(peri_event_window[0]) + abs(peri_event_window[1])):
+            bin_size = 0.001
         num_bins = int((peri_event_window[1] - peri_event_window[0]) / bin_size)
         
         # Grab the event data
@@ -1733,8 +1737,8 @@ class peri_event_plot(plot_object):
     def _add_unit_to_axes(self, event_data, hist, bins, color):
 
         # Plot the event plot
-        event_plot_handles = self.axs[0].eventplot(event_data, color=color, linewidths=1,
-            alpha = 0.5)
+        event_plot_handles = self.axs[0].eventplot(event_data, color=color, linewidths=2,
+            alpha = 0.8)
         self.plot_handles['event_plot'].append(event_plot_handles)
 
         # Plot the histogram

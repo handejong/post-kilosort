@@ -12,6 +12,7 @@ $ python -i pks.py path/to/folder_with_data
 
 ## Loading data
 ```python
+from pks_processing import pks_dataset
 path = 'path/to/folder_with_data'
 data = pks_dataset(path) # Loads the dataset.
 
@@ -19,6 +20,7 @@ data = pks_dataset(path) # Loads the dataset.
 data.clusters # A dataframe with all clusters as identified by Kilosort
 data.sort.todo() # The next 10 units that PKS thinks you should be working on
 ```
+Note that "path" contains the path to the folder with your dataset, not any particular file in that dataset.
 
 ### How data is saved in PKS
 After you run PKS for the first time, a file **"changeSet.py"** will be created in the folder "pks_data". This file is will contain all manipulations you make on the dataset **no datafiles are changed by PKS.** You can remove lines from changeSet.py if you later decide not do any particular manipulation. You can also add lines if there is something you want to do every time you load the data. For instance, plot a certain figure (see below).

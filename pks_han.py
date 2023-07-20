@@ -32,6 +32,10 @@ sys.path.append(pks_path + 'src/')
 from pks_processing import pks_dataset
 import matplotlib.pyplot as plt
 
+# Settings
+PE_channel = 'AI_1'
+PE_block_cuttoff = 1000 * (23*60 + 30)
+
 # Welcome message
 def welcome_message():
 
@@ -67,6 +71,10 @@ if __name__ == '__main__':
         if temp.spikeCount < X:
             data.sort.delete_unit(i)
 
+    # Add a columns to clusters
+    if 'tagged' not in data.clusters.columns:
+        data.clusters.loc[:, 'tagged'] = np.nan
+
     # Let's have a look at the first 5 units of the "todo" dataframe
     temp = data.sort.todo().iloc[:5, :]
 
@@ -96,16 +104,22 @@ if __name__ == '__main__':
 
     # Plot peri-event plots
     try:
-        stamps = data.get_nidq(); stamps = stamps[stamps.Channel=='AI_2']
-        peri_start = data.plot.peri_event(stamps = stamps.Start.values/1000)
+        stamps = data.get_nidq(); stamps = stamps[stamps.Channel==PE_channel]
+        stamps_block_1 = stamps[stamps.Start<PE_block_cuttoff]
+        peri_start = data.plot.peri_event(stamps = stamps_block_1.Start.values/1000,
+            peri_event_window = (-0.020, 0.020))
         os.system("i3-msg floating toggle > /dev/null 2>&1")
-        peri_stop =  data.plot.peri_event(stamps = stamps.Stop.values/1000)
+
+
+        stamps_block_2 = stamps[stamps.Start>PE_block_cuttoff]
+        peri_stop =  data.plot.peri_event(stamps = stamps_block_2.Stop.values/1000,
+            peri_event_window = (-0.020, 0.020))
         os.system("i3-msg floating toggle > /dev/null 2>&1")
 
         # Add timestamps tot he plots
         data.plot.add_timestamps(stamps.Start.values/1000)
     except:
-        print('Unable to plot peri-event plots for NIDQ channel AI_2')
+        print(f'Unable to plot peri-event plots for NIDQ channel {PE_channel}')
     
     # Make some shortlinks in the base workspace
     focus = data.plot.focus_unit
@@ -334,6 +348,49 @@ def han_super_auto(data):
             plt.close(temp)
 
     return  
+
+def check_tagging(data):
+
+    exit = False
+    found_good_unit = False
+    unit_id = int(data.sort.todo().index[0])
+    focus(unit_id)
+    fig = data.plot.ISI(unit_id)
+    update_all_plots()
+    go_back_to_terminal()
+
+    while not exit:
+       
+        # Ask if this cell is tagged
+        answer = input('Is this cell tagged? yes/?/noise/q: ')
+        if answer == 'q':
+            exit = True
+            continue
+
+        if answer == 'noise':
+            data.sort.delete_unit(int(unit_id))
+        else:
+            # Note the response and save
+            data.clusters.loc[unit_id, 'tagged'] = answer
+            if data.save_data:
+                with open(data.path + 'pks_data/changeSet.py', 'a') as f:
+                    f.write(
+                        f"self.clusters.loc[{unit_id}, 'tagged'] = '{answer}' #{data.sort._timestamp()}\n")
+
+        # Focus on the next non-tagged unit
+        temp = data.clusters[data.clusters.tagged.isna()]
+        unit_id = temp.index[0]
+
+        while not unit_id in data.clusters.index:
+            unit_id += 1
+
+        # Update
+        plt.close(fig)
+        focus(unit_id)
+        fig = data.plot.ISI(unit_id)
+        update_all_plots()
+        go_back_to_terminal()
+
 
 
 

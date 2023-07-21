@@ -5,15 +5,24 @@
 This is just an example of how I work with PKS. I particularly like my
 semi-automated clustering routines:
 
-    - next()
-    - auto_next()
-    - han_super_auto()
+    - next
+    - auto_next
+    - han_super_auto
+
+Also to quickly scan for opto-tagged units I included the function
+
+    - check_tagging
+
+Importantly, this file is just included as an example of how you can
+personalize PKS. There is a bare-bones version (pks.py) which just
+openes a few figures. This is just the version of PKS that I
+personally like.
 
 In order to put the figures at specific locations on my desktop I use
-a window manger called 'I3'.
+a window manager called 'I3'. But there are also methods in
+Matplotlib to do this.
 
-
-Last Updated: Jun 27 16:40:34 2023
+Last Updated: Jul 21 15:53 2023
 
 @autor: Han de Jong
 """
@@ -22,6 +31,7 @@ Last Updated: Jun 27 16:40:34 2023
 import sys
 import os
 import seaborn as sns
+import numpy as np
 
 # We need to find the filepath to PKS
 this_file = __file__
@@ -33,8 +43,9 @@ from pks_processing import pks_dataset
 import matplotlib.pyplot as plt
 
 # Settings
+opto_tagging = True
 PE_channel = 'AI_1'
-PE_block_cuttoff = 1000 * (23*60 + 30)
+PE_block_cuttoff = 1000 * (25*60 + 30)
 
 # Welcome message
 def welcome_message():
@@ -112,7 +123,7 @@ if __name__ == '__main__':
 
 
         stamps_block_2 = stamps[stamps.Start>PE_block_cuttoff]
-        peri_stop =  data.plot.peri_event(stamps = stamps_block_2.Stop.values/1000,
+        peri_stop =  data.plot.peri_event(stamps = stamps_block_2.Start.values/1000,
             peri_event_window = (-0.020, 0.020))
         os.system("i3-msg floating toggle > /dev/null 2>&1")
 
@@ -128,6 +139,12 @@ if __name__ == '__main__':
     done = data.sort.mark_done
     add = data.plot.add_unit
     remove = data.plot.remove_unit
+
+    # Are we opto_tagging?
+    if opto_tagging:
+        stamps = data.get_nidq(); stamps = stamps[stamps.Channel==PE_channel]
+        stamps = stamps.Start.values/1000
+        data.opto_tagging.set_parameters(stamps, (5, 20))
 
     # Put it all somewhere cool using I3
 
@@ -349,6 +366,8 @@ def han_super_auto(data):
 
     return  
 
+# This functions scrolls through all the units in the dataset and let's me verify
+# if they are tagged.
 def check_tagging(data):
 
     exit = False
@@ -362,13 +381,20 @@ def check_tagging(data):
     while not exit:
        
         # Ask if this cell is tagged
-        answer = input('Is this cell tagged? yes/?/noise/q: ')
+        answer = input('Is this cell tagged? yes/?/noise/details/q: ')
         if answer == 'q':
             exit = True
             continue
 
+        if answer == 'details':
+            data.opto_tagging.add_tagged_spikes(unit_id)
+            update_all_plots()
+            go_back_to_terminal()
+            continue
+
         if answer == 'noise':
             data.sort.delete_unit(int(unit_id))
+        
         else:
             # Note the response and save
             data.clusters.loc[unit_id, 'tagged'] = answer
@@ -376,6 +402,9 @@ def check_tagging(data):
                 with open(data.path + 'pks_data/changeSet.py', 'a') as f:
                     f.write(
                         f"self.clusters.loc[{unit_id}, 'tagged'] = '{answer}' #{data.sort._timestamp()}\n")
+
+        # Delete all tagged spikes waveforms
+        data.opto_tagging.remove_all_tagged()
 
         # Focus on the next non-tagged unit
         temp = data.clusters[data.clusters.tagged.isna()]

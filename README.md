@@ -1,5 +1,5 @@
 # post-kilosort (PKS)
-Python-based toolkit to import and analyze Neuropixels probes data that was previously processed using Kilosort 3.0. It is an alternative to Phy. In contrast to Phy it does not have a convenient GUI, instead it is  purely Matplotlib and command-line based. It is however very light-weight and highly customizable. 
+Python-based toolkit to import and analyze Neuropixels probes data that was previously processed using Kilosort 3.0. It is an alternative to Phy. In contrast to Phy it does not have a convenient GUI, instead it is  purely Matplotlib and command-line based. It is however light-weight and highly customizable. 
 
 
 Tutorial coming soon!
@@ -10,7 +10,12 @@ To start, run:
 $ python -i pks.py path/to/folder_with_data
 ```
 
+This should load a few example figures. (Feel free to customize the file "pks.py")
+
+
 ## Loading data
+Appart from running the file pks.py, you can load a dataset into your own Python code as follows:
+
 ```python
 from pks_processing import pks_dataset
 path = 'path/to/folder_with_data'
@@ -27,12 +32,13 @@ After you run PKS for the first time, a file **"changeSet.py"** will be created 
 
 If you do not want to save your manipulations toggle the save option as follows:
 ```python
-data.save_data=False # By default it is set to True
+data.save_data = False # By default it is set to True
 ```
 
 ## Plotting
 
 To plot waveforms, amplitudes (in time) or first principal component:
+
 ```Python
 units = [0, 1, 2, 10] # Will plot unit 0, 1, 2 and 10
 channels = [0, 1, 2, 3, 4, 5] # Will plot the first 6 channels
@@ -101,12 +107,12 @@ cut = data.sort.delete_unit # Again, binding the function itself, not its output
 cut(22) # Will now delete unit 22 from the data.
 ```
 
-#
- Future plans
+# Future plans
 
 1. PKS currently works on the file "temp_wh.mat" which is the whitened signal constructed by Kilosort. Soon you will also be able to load raw unfiltered (both spikeGLX and OpenEphys).
 
 2. To include a method to remove light artifacts, which are prevalent in opto-tagging experiments.
 
 3. To include methods to construct peri-event histograms of clustered units.
+(#3 is now included, but not annotated yet)
 

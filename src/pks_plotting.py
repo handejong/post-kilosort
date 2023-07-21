@@ -598,7 +598,7 @@ class pks_plotting:
         _ = [self.remove_unit(unit) for unit in set(all_units)]
 
         # Set the right channels
-        channel = self.data.clusters.loc[unit_id].mainChannel
+        channel = int(self.data.clusters.loc[unit_id].mainChannel)
         n_channels = len(self.data.linked_plots[0].channels)
         if n_channels%2 == 0:
             start = channel-int(n_channels/2-1)
@@ -975,9 +975,18 @@ class plot_object:
 
         """
 
+        # Figure out the unit names
+        units = self.units
+        unit_names = []
+        for unit in units:
+            unit_name = f'Unit: {unit}'
+            if unit > 10000:
+                if str(unit)[:3] == '999':
+                    unit_name = f'Unit: {unit-99900000} (tagged waveforms)'
+            unit_names.append(unit_name)
         colors = self.colors
         elements = [Patch(facecolor=colors[i], edgecolor=colors[i],
-                          label=f'Unit: {self.units[i]}')
+                          label=unit_names[i])
                     for i in range(len(self.units))]
         self.axs.ravel()[-1].legend(handles=elements)
 
@@ -1734,14 +1743,18 @@ class peri_event_plot(plot_object):
 
         return event_data, hist, bins
 
-    def _add_unit_to_axes(self, event_data, hist, bins, color):
+    def _add_unit_to_axes(self, event_data, hist, bins, color, store_handle = True):
 
         # Plot the event plot
         event_plot_handles = self.axs[0].eventplot(event_data, color=color, linewidths=2,
             alpha = 0.8)
-        self.plot_handles['event_plot'].append(event_plot_handles)
 
         # Plot the histogram
         _, _, hist_handle = self.axs[1].hist(bins[:-1], bins, weights=hist, edgecolor=color,
                                 facecolor = color, alpha=0.5)
-        self.plot_handles['histogram'].append(hist_handle)
+
+        if store_handle:
+            self.plot_handles['event_plot'].append(event_plot_handles)
+            self.plot_handles['histogram'].append(hist_handle)
+        else:
+            return event_plot_handles, hist_handle

@@ -59,6 +59,7 @@ import os
 from multiprocessing import Pool, cpu_count
 from pks_plotting import pks_plotting
 from pks_spike_sorting import sorter
+from pks_opto_tagging import opto_tagging
 from sklearn.decomposition import PCA
 import time
 
@@ -85,6 +86,7 @@ class pks_dataset:
         # Adding external methods
         self.plot = pks_plotting(self)
         self.sort = sorter(self)
+        self.opto_tagging = opto_tagging(self)
 
         # Where we will put handles to linked plots
         self.linked_plots = []
@@ -183,7 +185,7 @@ class pks_dataset:
 
         # Make the output
         if average:
-            waveform = np.mean(output, axis=0)
+            waveform = np.mean(output, axis=0)[0]
         else:
             waveform = output
 

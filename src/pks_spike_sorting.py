@@ -30,7 +30,7 @@ class sorter:
     def delete_unit(self, units):
 
         # Multiple units or just 1?
-        if units.__class__ == int:
+        if not (units.__class__ == list) | (units.__class__ == tuple) | (units.__class__ == np.ndarray):
             units = [units]
 
         for unit in units:

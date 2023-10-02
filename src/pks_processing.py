@@ -110,7 +110,7 @@ class pks_dataset:
 
         Grabs the raw signal (defined in self.signal_path) and extracts all the
         waveforms. Extracted waveforms are saved as sparce matrixes, resulting
-        in a significantly more managable dataset.
+        in a significantly more manageable dataset.
 
         Returns
         -------
@@ -125,7 +125,7 @@ class pks_dataset:
                            range(self.params['n_channels']))
 
     def get_waveform(self, spikes: np.array, channel: int, average: bool = True,
-                     sample: int = None, return_spikes=False, window=1.38):
+                     sample: int = None, return_spikes = False, window = 1.38):
         """
 
         Will grab the waveforms at time 'spikes' and return either the
@@ -185,7 +185,7 @@ class pks_dataset:
 
         # Make the output
         if average:
-            waveform = np.mean(output, axis=0)[0]
+            waveform = np.mean(output, axis=0)
         else:
             waveform = output
 
@@ -227,13 +227,15 @@ class pks_dataset:
 
     def get_unit_spikes(self, unit, return_real_time = False):
         """
-        Returns 
+        Returns spike indexes of the unit.
 
         Parameters
         ----------
         unit : int or str
             Identifyer of the unit of interest. Should match up with a value in
             self.spikeID.
+        return_real_time: bool
+            Will return spike time (in sec) instead of spike index.
 
         Returns
         -------
@@ -246,12 +248,49 @@ class pks_dataset:
         # I have no idea why I wrote this using recursion.
         if not return_real_time:
             return times
+        return self.convert_index_to_time(times)
 
-        # Convert to real time
-        times = times/float(self.metadata['imSampRate'])
-        times = times*self.sync_time_coefficients[0] + self.sync_time_coefficients[1]
-        
-        return times
+    def get_peri_event(self, unit:int, stamps, window = (-5, 5), binwidth = 0.1):
+        """
+        Calculate the peri-event histogram
+
+        Parameters:
+        -----------
+        unit: int
+            The unit ID
+        stamps: list or np.array
+            The timestamps (in seconds) that will be at T=0 of the PEH
+        window: tupple, list or np.array
+            The window (in seconds) before and after the timestamp
+        binwidth: float
+            The bin width in seconds
+
+        Returns:
+        --------
+        A DataFrame with the timeline relative to the stamps in the index and
+        the trial nr as the column headers.
+
+        """
+
+        spikes = self.get_unit_spikes(unit, return_real_time=True)
+        # Grab the event data
+        event_data = []
+        for stamp in stamps:
+            relative_window = np.array(window) + stamp
+            event_data.append(spikes[(relative_window[0] <= spikes) & (spikes <= relative_window[1])] - stamp)
+
+        # Now bin it to the binwidth
+        nr_bins = (window[1]-window[0])*(1/binwidth)+1
+        if not nr_bins == int(nr_bins):
+            print(f'WARNING: the binwidth of {binwidth} does not give an integer # of bins with the window {window}.')
+        nr_bins = int(nr_bins)
+        index = np.linspace(window[0], window[1], nr_bins)
+        output = pd.DataFrame(index = index[:-1], columns = np.linspace(1, len(stamps), len(stamps)).astype(int))
+        for i, events in enumerate(event_data):
+            n, _ = np.histogram(events, index)
+            output.loc[:, i+1] = n
+
+        return output
 
 
     def channel_pca(self, channel: int, units=[], n_components: int = 1,
@@ -522,6 +561,26 @@ class pks_dataset:
         
         # Store the polynomal
         self.sync_time_coefficients = p
+
+    def convert_index_to_time(self, times):
+        """
+        Will convert spike index to real time
+        """
+        times = times/float(self.metadata['imSampRate'])
+        times = times*self.sync_time_coefficients[0] + self.sync_time_coefficients[1]
+
+        return times
+    
+    def convert_time_to_index(self, times):
+        """
+        Inverted of convert_index_to_time. Will convert real times to spike indexes
+
+        Obviously there will always be a rounding error.
+        """
+        times = (times - self.sync_time_coefficients[1])/self.sync_time_coefficients[0]
+        times = np.round(times*float(self.metadata['imSampRate']), 0)
+
+        return times.astype(int)
 
     def _sync_time(self, output):
         """

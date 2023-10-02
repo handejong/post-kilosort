@@ -389,8 +389,8 @@ class pks_plotting:
 
         Parameters
         ----------
-        unit : int
-            The unit that your are interested in
+        unit : int or array
+            The unit that your are interested in (int) or an array of 
         sample_n: int
             The number of spikes we'll average over to get the waveform
         window: float
@@ -403,7 +403,16 @@ class pks_plotting:
         """
 
         # Select the spikes
-        spikes = self.data.get_unit_spikes(unit)
+        if not unit.__class__ == int:
+            if len(unit)>1:
+                spikes = unit
+                offset = 100
+            else:
+                print("Incorrect input for 'unit', see the function documentaion using help(obj.raw_unit_sample).")
+                return None
+        else:
+            spikes = self.data.get_unit_spikes(unit)
+            offset = 0.5 * self.data.clusters.Amplitude.loc[unit]
 
         # Make the figure
         fig, axs = plt.subplots(1, 4, figsize = (20, 12), 
@@ -420,7 +429,6 @@ class pks_plotting:
                     window = window)
 
             # Deal with the offset
-            offset = 0.5 * self.data.clusters.Amplitude.loc[unit]
             offseter = np.linspace(0, to_plot.shape[1]*offset, to_plot.shape[1])
             to_plot = to_plot + offseter
 

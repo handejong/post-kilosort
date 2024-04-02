@@ -53,6 +53,7 @@ Last Updated: Nov 11 14:01:20 2022
 # Imports
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 from scipy.sparse import csr_matrix, save_npz, load_npz, hstack
 import sys
 import os
@@ -351,12 +352,16 @@ class pks_dataset:
 
         return pca
 
-    def get_nidq(self):
+    def get_nidq(self, sync_channel='AI_0'):
         """
         Will load NI DAQ data if available.
 
         Currently will assume TTL pulses recorded at analog inputs. Pulses are
         extracted through thresholding, exact values are ignored.
+
+        Parameters:
+        -----------
+        sync_channel: the channel used for syncing the IMEC card with the NI DAQ
 
         Returns:
         --------
@@ -386,11 +391,13 @@ class pks_dataset:
 
         # Grab every channel
         output = pd.DataFrame()
-        timeline = np.linspace(0, len(data) / (float(nidq_meta['niSampRate'])/1000), len(data))
+        timeline = np.linspace(1/float(nidq_meta['niSampRate']), float(nidq_meta['fileTimeSecs']), len(data))
+
         for channel in range(data.shape[1]):
 
             try:
-                selection = (data[:, channel]>10000).astype(int)
+                # NOTE this threshold is a problem... need to figure out how to set dynamic but still not pick up noise.
+                selection = (data[:, channel]>20000).astype(int)
 
                 # Grab the pulses
                 diff = np.diff(selection)
@@ -415,14 +422,27 @@ class pks_dataset:
                 output = pd.concat((output, temp), axis=0)
             except:
                 print(f'No pulses on AI_{channel}')
-        
+
         # Some formatting
         output.index = range(len(output)) 
         output.index.name = '#'
-        output.loc[:, 'Duration'] = output.Duration.round(1)
-        output.loc[:, 'ITI'] = output.ITI.round(1)
-        output.loc[:, 'Start'] = output.Start.round(1)
-        output.loc[:, 'Stop'] = output.Stop.round(1)
+        output.loc[:, 'Duration'] = output.Duration.round(4)
+        output.loc[:, 'ITI'] = output.ITI.round(4)
+        output.loc[:, 'Start'] = output.Start.round(4)
+        output.loc[:, 'Stop'] = output.Stop.round(4)
+
+        # Make sure to use SYNC pulses to allign nidaq and IMEC data
+        sync_pulses = self.get_sync_pulses()
+        ni_sync = output[output.Channel==sync_channel].iloc[:len(sync_pulses), :]
+        max_error = (sync_pulses.Start - ni_sync.Start).max()*1000     
+        if max_error>1:
+            p = np.polyfit(ni_sync.Start, sync_pulses.Start, 1)
+            print(f'\nWARNING: the max sync error between NI and NPX is {max_error:.4f}ms consider recallibrating.')
+            print(f'Resetting using the polynomal: {p}\n')
+            output.Start = np.polyval(p, output.Start)
+            output.Stop = np.polyval(p, output.Stop)
+            output.Duration = (output.Duration*p[0]).round(4)
+            output.ITI = (output.ITI*p[0]).round(4)
 
         # Save the file
         output.to_csv(save_path)
@@ -463,7 +483,7 @@ class pks_dataset:
         data = data.reshape([-1, int(sync_meta['nSavedChans'])])
 
         # Grab only channel 384
-        timeline = np.linspace(0, len(data) / (float(sync_meta['imSampRate'])/1000), len(data))
+        timeline = np.linspace(1/float(sync_meta['imSampRate']), float(sync_meta['fileTimeSecs']), len(data))
         selection = (data[:, 384]>10).astype(int)
 
         # Grab the pulses
@@ -486,15 +506,47 @@ class pks_dataset:
 
         # Some formatting
         output.index.name = '#'
-        output.loc[:, 'Duration'] = output.Duration.round(1)
-        output.loc[:, 'ITI'] = output.ITI.round(1)
-        output.loc[:, 'Start'] = output.Start.round(1)
-        output.loc[:, 'Stop'] = output.Stop.round(1)
+        output.loc[:, 'Duration'] = output.Duration.round(4)
+        output.loc[:, 'ITI'] = output.ITI.round(4)
+        output.loc[:, 'Start'] = output.Start.round(4)
+        output.loc[:, 'Stop'] = output.Stop.round(4)
 
         # Save the file
         output.to_csv(save_path)
 
         return output
+
+    def verify_ni_sync(self, plot=True, channel='AI_0'):
+        """
+        A not un-important function will check if the NI DAQ and the IMEX signal acquisition
+        board are still in sync. If this is not the case, you might have to recalibrate.
+
+        Will grab the sync pulses from both the NIDAQ 'SYNC' port and the DAQ channel indicated
+        (Default is AI_0). Will then compare pulse onset and report the mean error in ms.
+
+        Parameters:
+        plot: bool
+            If you want the plot the error (usefull to see trends)
+        channel: str
+            The channel on the NI DAQ on which sync pulses are collected.
+
+        Returns:
+        --------
+        Mean error in ms
+
+        """
+        sync_pulses = self.get_sync_pulses()
+        ni_sync = self.get_nidq()
+        ni_sync = ni_sync[ni_sync.Channel==channel]
+        error = sync_pulses.Start - ni_sync.Start
+
+        if plot:
+            plt.figure(tight_layout=True)
+            plt.plot(error)
+            plt.ylabel('Error (ms)')
+            plt.xlabel('Pulse #')
+
+        return error.mean()
 
     def undo(self):
         """
@@ -586,7 +638,7 @@ class pks_dataset:
         """
         Responsible for applying the sync coefficients.
 
-        sync coefficients are set by "sync_time". This method is used to allign
+        sync coefficients are set by "sync_time". This method is used to align
         the output from get_nidq using these coefficients.
         """
 
@@ -696,7 +748,7 @@ class pks_dataset:
             # Todo Remove channel 190.
             # Shall we leave channel 384 (sync pulses)?
 
-            return
+            return data
 
         # RAISE ERROR
 
@@ -952,9 +1004,12 @@ class pks_dataset:
         # TODO
 
         # Find the signal paths
-        self.signal_path = self._find_files_with_extension(path, 'temp_wh.dat')
-        self.raw_sigal_path = self._find_files_with_extension(path, 'ap.bin')
+        self.whitened_path = self._find_files_with_extension(path, 'temp_wh.dat') # Not part of the new Kilosort output
+        self.raw_signal_path = self._find_files_with_extension(path, 'ap.bin')
         self.ap_meta_path = self._find_files_with_extension(path, 'ap.meta')
+
+        # By default we'll use the raw signal
+        self.signal_path = self.raw_signal_path
 
         # If available get NI daq data
         self.nidg_path = self._find_files_with_extension(path + '../', 'nidq.bin')
@@ -980,6 +1035,10 @@ class pks_dataset:
         return path
 
     def _find_files_with_extension(self, folder_path, extension):
+        """
+        This is excatly a bit janky, but helpfull.
+        """
+
         for file_name in os.listdir(folder_path):
             if file_name.endswith(extension):
                 return folder_path + file_name

@@ -14,9 +14,9 @@ Also to quickly scan for opto-tagged units I included the function
     - check_tagging
 
 Importantly, this file is just included as an example of how you can
-personalize PKS. There is a bare-bones version (pks.py) which just
-openes a few figures. This is just the version of PKS that I
-personally like.
+customize PKS. There is a bare-bones version (pks.py) which just
+opens a few figures. The current file is just the version of PKS that 
+I personally like.
 
 In order to put the figures at specific locations on my desktop I use
 a window manager called 'I3'. But there are also methods in
@@ -43,9 +43,25 @@ from pks_processing import pks_dataset
 import matplotlib.pyplot as plt
 
 # Settings
-opto_tagging = True
-PE_channel = 'AI_1'
-PE_block_cuttoff = 1000 * (25*60 + 30)
+opto_tagging = False
+anterograde = False
+PE_channel_light = 'AI_1' # Use AI_1 for opto-tagging, AI_2 for behavior
+PE_channel_behavior = 'AI_2'
+PE_block_cuttoff = ((60+35)*60 + 10) # Seconds
+
+# Settings for anterograde tagging
+if anterograde:
+    tagging_window= (-0.025, 0.025)
+    light_response_window = (5, 20)
+else:
+    tagging_window= (-0.002, 0.015)
+    light_response_window = (0, 6)
+
+# Make sure it is clear we are running in opto-tagging mode
+if opto_tagging:
+    print(' ')
+    print('RUNNING IN OPTO-TAGGING MODE.')
+    print(' ')
 
 # Welcome message
 def welcome_message():
@@ -101,36 +117,77 @@ if __name__ == '__main__':
     # NOTE these plots are also all stored in data.linked_plots!
     waveform_plot = data.plot.waveform(units, channels)
     os.system("i3-msg floating toggle > /dev/null 2>&1")
+    all_plots = [waveform_plot]
 
     # NOTE: if you don't specify units or channels, they will be infered from the oldes open plot:
     amplitude_plot = data.plot.amplitude()
     os.system("i3-msg floating toggle > /dev/null 2>&1")
+    all_plots.append(amplitude_plot)
 
     # PCA plot plots' the first principal component. It's one of my favorites.
     pca_plot = data.plot.pca()
     os.system("i3-msg floating toggle > /dev/null 2>&1")
+    all_plots.append(pca_plot)
 
     # Plot a welcome message
     welcome_message()
 
     # Plot peri-event plots
     try:
-        stamps = data.get_nidq(); stamps = stamps[stamps.Channel==PE_channel]
-        stamps_block_1 = stamps[stamps.Start<PE_block_cuttoff]
-        peri_start = data.plot.peri_event(stamps = stamps_block_1.Start.values/1000,
-            peri_event_window = (-0.020, 0.020))
-        os.system("i3-msg floating toggle > /dev/null 2>&1")
+        if opto_tagging:
+            stamps = data.get_nidq(); stamps = stamps[stamps.Channel==PE_channel_light]
+            stamps = stamps[stamps.Duration<0.011]
+            stamps_block_1 = stamps[stamps.Start<PE_block_cuttoff]
 
+            # IF no stamps, plot some other PE instead
+            if len(stamps_block_1) == 0:
+                behavior_stamps = data.get_nidq(); behavior_stamps = behavior_stamps[behavior_stamps.Channel==PE_channel_behavior]
+                peri_start = data.plot.peri_event(stamps = behavior_stamps.Stop.values,
+                peri_event_window = (-5, 5))
+                os.system("i3-msg floating toggle > /dev/null 2>&1")
+            else:
+                peri_start = data.plot.peri_event(stamps = stamps_block_1.Start.values,
+                    peri_event_window = tagging_window)
+                os.system("i3-msg floating toggle > /dev/null 2>&1")
+            all_plots.append(peri_start)
 
-        stamps_block_2 = stamps[stamps.Start>PE_block_cuttoff]
-        peri_stop =  data.plot.peri_event(stamps = stamps_block_2.Start.values/1000,
-            peri_event_window = (-0.020, 0.020))
-        os.system("i3-msg floating toggle > /dev/null 2>&1")
+            # Plot block 2
+            stamps_block_2 = stamps[stamps.Start>PE_block_cuttoff]
+            if len(stamps_block_2) == 0:
+                behavior_stamps = data.get_nidq(); behavior_stamps = behavior_stamps[behavior_stamps.Channel==PE_channel_behavior]
+                peri_start = data.plot.peri_event(stamps = behavior_stamps.Stop.values,
+                peri_event_window = (-5, 5))
+                os.system("i3-msg floating toggle > /dev/null 2>&1")
+            else:      
+                peri_stop =  data.plot.peri_event(stamps = stamps_block_2.Start.values,
+                    peri_event_window = tagging_window)
+                os.system("i3-msg floating toggle > /dev/null 2>&1")
+            all_plots.append(peri_stop)
 
-        # Add timestamps tot he plots
-        data.plot.add_timestamps(stamps.Start.values/1000)
+            # Add timestamps tot he plots
+            data.plot.add_timestamps(stamps.Start.values)
+
+            # We're doing behavior as well, but we'll keep it floating
+            stamps = data.get_nidq(); stamps = stamps[stamps.Channel==PE_channel_behavior]
+            peri_behavior = data.plot.peri_event(stamps = stamps.Stop.values,
+                peri_event_window = (-10, 5))
+            all_plots.append(peri_behavior)
+        else:
+            stamps = data.get_nidq(); stamps = stamps[stamps.Channel==PE_channel_behavior]
+            peri_start = data.plot.peri_event(stamps = stamps.Start.values,
+                peri_event_window = (-5, 5))
+            os.system("i3-msg floating toggle > /dev/null 2>&1")
+            all_plots.append(peri_start)
+            
+            peri_stop =  data.plot.peri_event(stamps = stamps.Stop.values,
+                peri_event_window = (-5, 5))
+            os.system("i3-msg floating toggle > /dev/null 2>&1")
+            all_plots.append(peri_stop)
+
+            # Add timestamps tot he plots
+            data.plot.add_timestamps(stamps.Start.values)
     except:
-        print(f'Unable to plot peri-event plots for NIDQ channel {PE_channel}')
+        print(f'Unable to plot peri-event plots for NIDQ channel {PE_channel_light} and or {PE_channel_behavior}')
     
     # Make some shortlinks in the base workspace
     focus = data.plot.focus_unit
@@ -142,12 +199,13 @@ if __name__ == '__main__':
 
     # Are we opto_tagging?
     if opto_tagging:
-        stamps = data.get_nidq(); stamps = stamps[stamps.Channel==PE_channel]
-        stamps = stamps.Start.values/1000
-        data.opto_tagging.set_parameters(stamps, (5, 20))
+        stamps = data.get_nidq(); stamps = stamps[stamps.Channel==PE_channel_light]
+        stamps = stamps[stamps.Duration<0.011]
+        #stamps = stamps[stamps.Start>37*60+30]
+        stamps = stamps.Start.values
+        data.opto_tagging.set_parameters(stamps, light_response_window)
 
     # Put it all somewhere cool using I3
-
     # Waveforms
     string = r' i3-msg "[title=\"Figure 1\"] focus" > /dev/null 2>&1'
     os.system(string)
@@ -211,7 +269,7 @@ if __name__ == '__main__':
 
 # This function will force Matplotlib to update all included figures
 def update_all_plots():
-    for fig in [waveform_plot, pca_plot, amplitude_plot, peri_stop, peri_start]:
+    for fig in all_plots:
         plt.figure(fig.fig)
         plt.draw()
 

@@ -1,6 +1,5 @@
 # post-kilosort (PKS)
-Python-based toolkit to import and analyze Neuropixels probes data that was previously processed using Kilosort 3.0. It is an alternative to Phy. In contrast to Phy it does not have a convenient GUI, instead it is  purely Matplotlib and command-line based. It is however light-weight and highly customizable. 
-
+Python-based toolkit to import and analyze Neuropixels probes data that was previously processed using Kilosort 3.0. It is an alternative to Phy. In contrast to Phy it does not have a convenient GUI, instead it is  purely Matplotlib and command-line based. It is however light-weight and highly customizable.
 
 Tutorial coming soon!
 
@@ -14,7 +13,7 @@ This should load a few example figures. (Feel free to customize the file "pks.py
 
 
 ## Loading data
-Appart from running the file pks.py, you can load a dataset into your own Python code as follows:
+Appart from running the file pks.py, you can load a data-set into your own Python code as follows:
 
 ```python
 from pks_processing import pks_dataset
@@ -25,7 +24,7 @@ data = pks_dataset(path) # Loads the dataset.
 data.clusters # A dataframe with all clusters as identified by Kilosort
 data.sort.todo() # The next 10 units that PKS thinks you should be working on
 ```
-Note that "path" contains the path to the folder with your dataset, not any particular file in that dataset.
+Note that "path" contains the path to the folder with your data-set, not any particular file in that data-set.
 
 ### How data is saved in PKS
 After you run PKS for the first time, a file **"changeSet.py"** will be created in the folder "pks_data". This file is will contain all manipulations you make on the dataset **no datafiles are changed by PKS.** You can remove lines from changeSet.py if you later decide not do any particular manipulation. You can also add lines if there is something you want to do every time you load the data. For instance, plot a certain figure (see below).
@@ -49,7 +48,14 @@ amplitude_plot = data.plot.amplitude()  # Amplitude-in-time plot
 pca_plot = data.plot.pca() # First principal component plot
 ```
 
-You can plot any attribute in time (such as in the default amplitude plot) or as a scatter (such as in the default pca plot). To do this, use the function plot.custom_plot. (Tutorial to follow).
+An example of a waveform plot:
+![An example of a waveform plot](img/waveform_plot.png)
+
+And a PCA (scatter) plot:
+![An example of a PCA plot](img/pca_plot.png)
+
+
+You can plot any attribute in time (such as in the default amplitude plot) or as a scatter (such as in the default PCA plot). To do this, use the function plot.custom_plot. (Tutorial to follow).
 
 You can add and remove units to each plot individually or to all plots simultaneously
 
@@ -85,11 +91,12 @@ data.plot.ISI(2) # Will plot the ISI of unit 2 (a unit must be specified)
 1. Make the plots you want. I like waveform, amplitude-in-time and the PCA plot, but there are a lot of possibilities.
 2. Have look at the cells PKS think you should sort (data.sort.todo()). Have close look at 'spikeCount', 'Amplitude' to see if it is worth your time to clean the unit.
 3. Use add_unit, remove_unit and change_channel to get a sense for the units you are looking at. (PKS currently does not use "template-similarity", however, you can look at the similarity matrix in self.similarity_matrix and get any template using the method data.get_template(unit).)
-4. Use the sort methods to manipulate the dataset. **NOTE: these manipulations are automatically saved (see above)**
+4. Use the sort methods to manipulate the data-set. **NOTE: these manipulations are automatically saved (see above)**
 
 ```python
 data.sort.translate(15, -1) # Will translate unit 15 one datapoint in time.
 data.sort.merge_units(14, 15) # Will merge the spikes of unit 14 into unit 15
+data.sort.split_unit(14, [11, 12, 13], 2) # Will split unit 14 into 2 clusters by doing k-means clustering on channels 11, 12 & 13.
 data.sort.delete_unit(17) # Will delete unit 17
 data.sort.mark_done(15) # To mark unit 15 as "done"
 ```
@@ -107,12 +114,36 @@ cut = data.sort.delete_unit # Again, binding the function itself, not its output
 cut(22) # Will now delete unit 22 from the data.
 ```
 
+# Working with TTL channels
+Timestamps from pulses collected on separately collected analog input channels can be obtained as follows:
+```python
+stamps = data.get_nidq() # Outputs a Pandas dataframe with all your timestamps.
+```
+
+You can make peri-event histograms using the function 'peri_event' for instance. Suppose you collected the onset of some CS on analog input 1:
+```python
+CS_onset = stamps[stapms.Channel=='AI_1']
+peh = data.plot.peri_event(14, CS_onset, peri_event_window = (-2, 7)) # Will plot the PEH for unit 14 from -2s to 7s around CS+ onset.
+```
+NOTE: you can add or remove cells to the PEH plot in the same way as you'd add and remove cells to any plot (see above).
+
+# Opto-tagging
+There is a separate sub-library to verify if neurons are opto-tagged. To use it, first extract your light pulses from the AI channels (see above) then insert them into the opto-tagging object as follows:
+```python
+light_pulses = stamps[stamps.channel = 'AI_2'] # Suppose your light pulses were collected on AI_2, it could be any channel or some external source of course.
+window = (0, 5) # This is the window (in ms) where we expect the light response
+data.opto_tagging.set_parameters(light_pulses, window)
+```
+
+Now you should be able to inspect potentially opto-tagged neurons by just adding them to your plots.
+```python
+data.opto_tagging.add_tagged_spikes(14) # Will add the evoked action potentials of unit 14 as a custom unit to all open plots.
+```
+For antidromic tagging there is also a method that will perform the collision test. See the function documentation for help.
+
 # Future plans
 
 1. PKS currently works on the file "temp_wh.mat" which is the whitened signal constructed by Kilosort. Soon you will also be able to load raw unfiltered (both spikeGLX and OpenEphys).
 
 2. To include a method to remove light artifacts, which are prevalent in opto-tagging experiments.
-
-3. To include methods to construct peri-event histograms of clustered units.
-(#3 is now included, but not annotated yet)
 

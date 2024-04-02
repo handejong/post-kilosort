@@ -179,7 +179,7 @@ class opto_tagging:
         self.data.save_data = save_state
 
 
-    def light_artifact(self, window = 10, sample_n = 10):
+    def light_artifact(self, window = 10, sample_n = 10, offset = None):
         """
         This function will give you an idea of the light artifact.
 
@@ -189,7 +189,18 @@ class opto_tagging:
         indexes = self.data.convert_time_to_index(self.stamps)
         
         # Plot them
-        self.data.plot.raw_unit_sample(indexes, sample_n = sample_n, window = window)
+        self.data.plot.raw_unit_sample(indexes, sample_n = sample_n, 
+                                       window = window,
+                                       offset = offset)
+        plt.suptitle(f'Average of {sample_n} waveforms', color=self.data.plot.axcolor)
+
+        # Also plot one particular waveform
+        indexes = np.random.choice(indexes, 2)
+        example_time = self.data.convert_index_to_time(np.random.choice(indexes, 2))[0]
+        self.data.plot.raw_unit_sample(indexes, sample_n = 1, 
+                                       window = window,
+                                       offset = 1000)
+        plt.suptitle(f'Example waveform at T={example_time}', color=self.data.plot.axcolor)
         
         return None
     

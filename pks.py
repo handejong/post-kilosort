@@ -14,12 +14,12 @@ Example:
 Navigate to the folder with your data
 (this data needs to be previously clustered using Kilosort 3.0)
     
-    $cd ~/data/folder
+    cd ~/data/folder
 
 Run pks on that folder
 (Suppose you downloaded pks to a folder named 'Git')
 
-    $python -i ~/Git/PKS/pks.py .
+    python -i ~/Git/PKS/pks.py .
 
 The '.' indicates you want to run PKS on the current folder
 
@@ -27,9 +27,11 @@ TIP:
 ----
 Add pks as an alias to you .bashrc like so:
 
->>> alias pks="ipython -i /home/han/Git/post-kilosort/pks.py"
+    alias pks="ipython -i /home/han/Git/post-kilosort/pks.py"
 
-Now you can run it from any folder by just typing "pks .""
+Now you can run it from any folder by just typing:
+
+    pks .
 
 Last Updated: Jun 27 16:24:20 2023
 @autor: Han de Jong
@@ -66,8 +68,8 @@ if __name__ == '__main__':
     # Grab the path from input argument
     path = sys.argv[1]
 
-    # Make the dataset
-    data = pks_dataset(path)
+    # Make the dataset 
+    data = pks_dataset(path) # <--- This is how you load a dataset!
 
     # Optional (but recomended) sort the clusters in order of chanel (instead of the order
     # in which Kilosort found them.)
@@ -83,9 +85,11 @@ if __name__ == '__main__':
     # Let's have a look at the first 5 units of the "todo" dataframe
     temp = data.sort.todo().iloc[:5, :]
 
-     # Maybe this dataset is already completely clustered and todo is empty
+    # Maybe this dataset is already completely clustered and todo is empty
     if len(temp)==0:
         temp = data.clusters.iloc[:5, :]
+
+    # Plot the first 5 units
     units = temp.index.values
     s_chan = max([temp.mainChannel.min()-2, 0])
     channels = list(range(s_chan, s_chan+6))
@@ -106,11 +110,13 @@ if __name__ == '__main__':
     welcome_message()
 
     # Maybe you have timestamps in a logAI file?
+    # This currently does not run, but you can run it by setting this to True
+    # It will plot the PE plots for timestamps on AI_2 (but you can change this!)
     if False:
         # Plot peri-event plots from AI_2 (or any other analog input)
         try:
             stamps = data.get_nidq(); stamps = stamps[stamps.Channel=='AI_2']
-            peri_start = data.plot.peri_event(stamps = stamps.Start.values/1000)
+            peri_start = data.plot.peri_event(stamps = stamps.Start.values/1000) # <-- note the ms to s conversion
         except:
             print('Unable to plot peri-event plots for NIDQ channel AI_2')
     

@@ -91,6 +91,7 @@ import seaborn as sns
 import pks_attribute_functions as atf
 from mpl_toolkits import mplot3d
 from functools import partial
+from pks_explorer import signal_explorer
 
 # Settings
 rcParams['toolbar'] = 'None'
@@ -382,9 +383,9 @@ class pks_plotting:
 
         return fig, axs
 
-    def raw_unit_sample(self, unit, sample_n = 1000, window=3):
+    def raw_unit_sample(self, unit, sample_n = 1000, window=3, offset=None):
         """
-        Plots the average respond (averaged over sample_n spikes) on
+        Plots the average response (averaged over sample_n spikes) on
         all channels.
 
         Parameters
@@ -406,13 +407,15 @@ class pks_plotting:
         if not unit.__class__ == int:
             if len(unit)>1:
                 spikes = unit
-                offset = 100
+                if offset is None:
+                    offset = 100
             else:
                 print("Incorrect input for 'unit', see the function documentaion using help(obj.raw_unit_sample).")
                 return None
         else:
             spikes = self.data.get_unit_spikes(unit)
-            offset = 0.5 * self.data.clusters.Amplitude.loc[unit]
+            if offset is None:
+                offset = 0.5 * self.data.clusters.Amplitude.loc[unit]
 
         # Make the figure
         fig, axs = plt.subplots(1, 4, figsize = (20, 12), 
@@ -447,6 +450,23 @@ class pks_plotting:
         axs[0].set_ylabel('Channels', color='white')
 
         return fig, axs
+    
+    def explore_unit(self, unit):
+        """
+        """
+        stamps = self.data.get_unit_spikes(unit, return_real_time = True)
+        browser = signal_explorer(self.data, stamps)
+        browser.window = 0.01
+        
+        # Set channels
+        main_channel = self.data.clusters.loc[unit, 'mainChannel']
+        browser.channel_start = max((0, main_channel - 5))
+        browser.channel_end = min((main_channel + 5, 383))
+        
+        # Make the figure
+        browser.make_figure()
+        
+        return browser
 
     def plot_3D(self, units=None, channels=None,
                 attribute_function=atf._calc_amplitude):

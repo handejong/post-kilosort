@@ -44,8 +44,8 @@ class signal_explorer:
         self.clean_std = 0
 
         # Make memmaps to the data
-        self.clean_signal = self._get_raw_signal(self.data.signal_path)
-        self.raw_signal = self._get_raw_signal(self.data.raw_signal_path)
+        self.clean_signal = self.data.get_filtered_signal()
+        self.raw_signal = self.data.get_raw_signal()
 
         # Get metadata
         self.sample_rate = float(self.data.metadata['imSampRate'])
@@ -78,10 +78,12 @@ class signal_explorer:
             signal = self.clean_signal
 
         # Make the indexer
-        indexer = (timeline>self.T-self.window) & (timeline<self.T+self.window)
+        # To be honest, I should switch to trusting the framerate
+        start_i = np.argmin(np.abs(timeline-(self.T-self.window)))
+        end_i = np.argmin(np.abs(timeline-(self.T+self.window)))
 
         # Select the data
-        to_plot = pd.DataFrame(signal[indexer, self.channel_start:self.channel_end+1], index=timeline[indexer])
+        to_plot = pd.DataFrame(signal[start_i:end_i, self.channel_start:self.channel_end+1], index=timeline[start_i:end_i])
 
         # Scale and offset
         mean = np.mean(to_plot.values[:])
@@ -108,7 +110,7 @@ class signal_explorer:
 
         # Set the timeline
         index =  np.linspace(0, template.shape[0] / self.sample_rate, template.shape[0])
-        center = index[int(len(index)/2)]
+        center = index[int(len(index)/3)]
         index = index + time - center
         template.index = index
 
@@ -248,70 +250,41 @@ class signal_explorer:
         offseter = np.linspace(0, to_plot.shape[1]*10, to_plot.shape[1])
         return to_plot + offseter
 
-
-    def _get_raw_signal(self, path):
+    def help(self):
         """
-        Makes a memory pap linking to the signal. Currently supported signals. 
-        The path to the signal of interest is stored in self.signal_path.
-        Currently supported signals are:
-
-            - temp_wh.dat (output of Kilosort, whitened and hp filtered)
-            - continous.dat (output of open Ephys)
-            - some file ending in .bin (output of SpikeGLX)
-
-        Returns
-        -------
-        Memmap to the signal of interest
-
+        Prints a help message
         """
-
-        # NOTE, self.params['dtype'] has the Kilosort output data type. In the
-        # future this might not work for Open Ephys and/or SpikeGLX data.
-
-        # Make the memmap
-        data = np.memmap(path, dtype=self.data.params['dtype'])
-
-        # Whitened Kilosort output
-        if path.endswith('temp_wh.dat'):
-            #print('Loading Kilosort output signal.')
-            data = data.reshape([-1, 383])
-            return data
-
-        # Raw Open Ephys output
-        if path.endswith('continous.dat'):
-            #print('Loading Open Ephys output signal.')
-            data = data.reshape([-1, 384])
-
-            # Todo Remove channel 190!
-
-            return data
-
-        # Spike GLX output
-        if path.endswith('ap.bin'):
-
-            data = data.reshape([-1, 385])
-            # Todo Remove channel 190.
-            # Shall we leave channel 384 (sync pulses)?
-
-            return data
-
-        # RAISE ERROR
+        print('Help:')
+        print('Use the following keys to navigate the signal:')
+        print('n: Next stamp')
+        print('p: Previous stamp')
+        print('r: Random stamp')
+        print('t: Toggle templates')
+        print('h: Help')
 
     def _on_key(self, event):
+        """
+        Deals with key presses. I thought about using a dictionary, but this
+        is more readable.
+        """
 
         if event.key == 'n':
             self.next(1)
-            return
-        if event.key == 'p':
+
+        elif event.key == 'p':
             self.next(-1)
-            return
-        if event.key == 'r':
+
+        elif event.key == 'r':
             self.stamp_counter = round(random.random()*len(self.stamps))-1
             self.next(1)
-            return
-        if event.key == 't':
+
+        elif event.key == 't':
             self.templates()
-            return
+
+        elif event.key == 'h':
+            self.help()
+
+        return
         
         print(f'No action specified for key: {event.key}')
 

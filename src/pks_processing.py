@@ -62,6 +62,7 @@ from pks_plotting import pks_plotting
 from pks_spike_sorting import sorter
 from pks_opto_tagging import opto_tagging
 from sklearn.decomposition import PCA
+from scipy import signal
 import time
 
 
@@ -172,7 +173,7 @@ class pks_dataset:
                 spikes = spikes[:sample]
 
         # Grab the signal we want to work on
-        data = self._get_raw_signal()
+        data = self.get_raw_signal()
 
         # What is the window size?
         samp_rate = float(self.metadata['imSampRate'])/1000
@@ -181,8 +182,8 @@ class pks_dataset:
         # Output data
         try:
             output = data[spikes[:, np.newaxis] + np.arange(-window, window), channel]
-        except:
-            print("Unable to grab waveforms")
+        except Exception as e:
+            print("Unable to grab waveforms:", e)
 
         # Make the output
         if average:
@@ -633,6 +634,168 @@ class pks_dataset:
         times = np.round(times*float(self.metadata['imSampRate']), 0)
 
         return times.astype(int)
+    
+    def get_raw_signal(self):
+        """
+        Makes a memory pap linking to the signal. Currently supported signals. 
+        The path to the signal of interest is stored in self.signal_path.
+        Currently supported signals are:
+
+            - temp_wh.dat (output of Kilosort, whitened and hp filtered)
+            - continous.dat (output of open Ephys)
+            - some file ending in .bin (output of SpikeGLX)
+
+        Returns
+        -------
+        Memmap to the signal of interest
+
+        NOTE: temp_wh is not actually a "raw signal" but I just wanted there to
+        be an option to load the Kilosort-whitened signal directly. Kilosort 4
+        does not output a temp_wh file anymore, so I included get_filtered_signal
+        to load the filtered signal.
+
+        """
+
+        # NOTE, self.params['dtype'] has the data type.
+
+        # Make the memmap
+        data = np.memmap(self.signal_path,
+                         dtype=self.params['dtype'])
+
+        # Whitened Kilosort output
+        if self.signal_path.endswith('temp_wh.dat'):
+            #print('Loading Kilosort output signal.')
+            data = data.reshape([-1, 383])
+            return data
+
+        # Raw Open Ephys output
+        if self.signal_path.endswith('continous.dat'):
+            # print('Loading Open Ephys output signal.')
+            data = data.reshape([-1, 384])
+
+            # Do we remove channel 190? (= ref)
+            
+            return data
+
+        # Spike GLX output
+        if self.signal_path.endswith('ap.bin'):
+
+            data = data.reshape([-1, 385])
+
+            # Apply the channel map without having to pre-load all data
+            class memmap_wrapper:
+                def __init__(self, data, map):
+                    self.raw_data = data
+                    self.channel_map = map
+
+                def __getitem__(self, key):
+                    sample_slice, channel_slice = key
+                    channel_ids = self.channel_map[channel_slice]
+
+                    # For now we don't accept boolean indexing
+                    if not isinstance(sample_slice, slice):
+                        if sample_slice.dtype == bool:
+                            raise Exception('Boolean indexing not supported.')
+                        
+                    return self.raw_data[sample_slice, channel_ids]
+
+                def __getattr__(self, attr):
+                    return getattr(self.raw_data, attr)
+                
+                def __len__(self):
+                    return len(self.raw_data)
+                    
+            # Load the map
+            map = np.load(self.path + 'channel_map.npy').reshape(-1)
+
+            return memmap_wrapper(data, map)
+
+        # RAISE ERROR
+        raise Exception('Signal type not supported.')
+    
+    def get_filtered_signal(self, car = True, whitened = True, filter = None):
+        """
+        Same as get_raw_signal except that it returns a filtered signal.
+
+        Parameters:
+        -----------
+        car: bool
+            Wether or not to apply common average referencing.
+        whitened: bool
+            Wether or not to apply withening. (Using KS-provided matrix)
+        filter: scipy.signal.butter
+            A filter that is applied to the signal.
+
+        Returns:
+        --------
+        A wrapper around a memmap object to the signal.
+
+        NOTE: an important caveat of this method is that the filter might 
+        give weird results for short (like single-waveforms) signals. The 
+        mean subtraction, CAR and whitening should be fine.
+
+        """
+
+        # Load the raw signal
+        data = self.get_raw_signal()
+
+        # Load the whitening matrix
+        if whitened:
+            withened = np.load(self.path + 'whitening_mat_dat.npy')
+        else:
+            whitened = None
+
+        # Make the filtered signal
+        class filtered_signal:
+            def __init__(self, data, car, whitened, filter):
+                self.data = data
+                self.car = car
+                self.whitened = whitened
+                self.filter = signal.butter(3, 300, fs = 30000, btype = 'high')
+
+                # Store the mean signal
+                self.mean_signal = data[::100000, :].mean(axis=0)
+
+            def __getitem__(self, key):
+
+                # grab all channels
+                filtered = self.data[key[0], :]
+                filtered = filtered - self.mean_signal
+
+                # Apply car (KS also does median, not mean)
+                if self.car:
+                    filtered = filtered - np.median(filtered, axis=1)[:, np.newaxis]
+
+                # Apply the filter
+                if self.filter is not None:
+                    filtered = signal.filtfilt(self.filter[0], self.filter[1], filtered, axis=0)
+
+                # Apply the withening
+                if not self.whitened is None:
+                    filtered =  filtered @ self.whitened
+
+                return filtered[:, key[1]]
+            
+            def __getattr__(self, attr):
+                    return getattr(self.data, attr)
+            
+            def __len__(self):
+                return len(self.data)
+            
+            # Apply the channel map without having to pre-load all data
+            class memmap_wrapper:
+                def __init__(self, data, map):
+                    self.raw_data = data
+                    self.channel_map = map
+
+                def __getitem__(self, key):
+                    sample_slice, channel_slice = key
+                    print(sample_slice)
+                    print(channel_slice)
+                    channel_ids = self.channel_map[channel_slice]
+                    return self.raw_data[sample_slice, channel_ids]
+
+        return filtered_signal(data, car, withened, filter)
 
     def _sync_time(self, output):
         """
@@ -702,55 +865,6 @@ class pks_dataset:
             return [i for i in input_value]
 
         raise Exception(f'{input_value.__class__} is not a valid input type.')
-
-    def _get_raw_signal(self):
-        """
-        Makes a memory pap linking to the signal. Currently supported signals. 
-        The path to the signal of interest is stored in self.signal_path.
-        Currently supported signals are:
-
-            - temp_wh.dat (output of Kilosort, whitened and hp filtered)
-            - continous.dat (output of open Ephys)
-            - some file ending in .bin (output of SpikeGLX)
-
-        Returns
-        -------
-        Memmap to the signal of interest
-
-        """
-
-        # NOTE, self.params['dtype'] has the Kilosort output data type. In the
-        # future this might not work for Open Ephys and/or SpikeGLX data.
-
-        # Make the memmap
-        data = np.memmap(self.signal_path,
-                         dtype=self.params['dtype'])
-
-        # Whitened Kilosort output
-        if self.signal_path.endswith('temp_wh.dat'):
-            #print('Loading Kilosort output signal.')
-            data = data.reshape([-1, 383])
-            return data
-
-        # Raw Open Ephys output
-        if self.signal_path.endswith('continous.dat'):
-            #print('Loading Open Ephys output signal.')
-            data = data.reshape([-1, 384])
-
-            # Todo Remove channel 190!
-
-            return data
-
-        # Spike GLX output
-        if self.signal_path.endswith('ap.bin'):
-
-            data = data.reshape([-1, 385])
-            # Todo Remove channel 190.
-            # Shall we leave channel 384 (sync pulses)?
-
-            return data
-
-        # RAISE ERROR
 
     def _build_waveform(self, channel: int, chan_range=[-10, 10]):
         """
